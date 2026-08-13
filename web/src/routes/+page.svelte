@@ -514,12 +514,13 @@
 		</dl>
 
 		<p class="note">
-			<b>The screen puts a camera inside the corpus.</b> The two dozen birds currently
-			singing together are a constellation of dim dots, arranged the same way as the
-			cloud turning behind this page; each time one starts a song, a thread of stretched
-			dots grows out of its dot — fat where the note is loud, pinched where it is quiet,
-			with a bead at the note being sung right now. When another bird takes over, the
-			camera swings across to it.
+			<b>The screen puts a camera inside the corpus.</b> A very faint lattice gives it
+			somewhere to be; the birds are not drawn until they sing. When one starts a song, a
+			cross of dashed rules is struck through it and a thread of stretched dots grows out
+			of it — fat where the note is loud, pinched where it is quiet, with a haloed bead at
+			the note being sung right now. The camera frames whoever is singing: close in on
+			one, easing back to hold two together, and easing back again as a long song
+			outgrows the frame.
 		</p>
 
 		<p class="note">

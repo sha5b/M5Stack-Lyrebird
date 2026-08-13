@@ -75,18 +75,54 @@
 // the focal length quoted at it. Close enough that one song fills the band, which
 // is the point of moving the camera at all — further out and this is the bed again
 // with fewer marks.
-#define CAM_DIST_NEAR 1.8f   // while a bird is singing: pushed in
-#define CAM_DIST_IDLE 2.9f   // between songs: backed off, so the roster reads
+#define CAM_DIST_NEAR 1.5f   // one bird singing: pushed right in
+#define CAM_DIST_FAR 6.0f    // a long song, or several far apart: as far back as it goes
+#define CAM_DIST_IDLE 2.2f   // nothing singing: eased back a little
+
+// The share of the band the singing should fill, measured **in screen space** on both
+// axes — the largest of |x| / (w/2) and |y| / (h/2) over the current gesture.
+//
+// This is what makes the framing adaptive, and it is measured over *everything being
+// drawn*, not just over the heads. Two consequences, both wanted:
+//
+//   two birds at once   the distance is whatever fits both, so they are shown
+//                       together instead of the camera choosing one and losing the
+//                       other off the frame.
+//   one long song       the thread grows as it is sung, so the fit grows with it and
+//                       the camera eases back to keep the gesture in view. Measured on
+//                       heads alone it never moved, and a long song simply ran off the
+//                       edge at full zoom.
+//
+// The *target* stays the centroid of the heads, though — not of the whole gesture — so
+// the note being sung stays near the middle and the thread streams away behind it
+// rather than the head drifting out to an edge.
+//
+// Screen space rather than a world radius, and that is a correction. Solving
+// `radius * ZOOM * CAM_F / (FIT_FRAC * h/2)` quoted the fit against the half-*height*
+// alone, so on a 310 x 156 band a broadside gesture — which is what the yaw steering
+// works to produce — was fitted to the short axis and used a third of the long one.
+// Measuring the projected extent instead is naturally right on both axes and folds in
+// STRETCH_X without having to think about it. It costs being a feedback loop on last
+// frame's distance rather than a closed form, which at these easing rates is invisible.
+#define FIT_FRAC 0.80f
+
+// A bird stays in the frame's reckoning this long after it stops sounding, so the
+// shot does not snap wider the instant a syllable ends.
+#define FRAME_HOLD_MS 1200
 #define CAM_F 2.0f
 
 // How fast the dolly moves between those two, per frame. Slower than the pan, so a
 // push-in reads as a push-in rather than as the picture changing size.
 #define DOLLY_EASE 0.035f
 
-// Pixels per layout unit at the target's depth. Close enough that a song fills a
-// good part of the band and a dot has a size; far enough that two or three of the
-// roster are usually in frame, so the picture is never one thread in the void.
-#define ZOOM 100.0f
+// Pixels per layout unit at the target's depth.
+//
+// Set so that *activity owns the screen*. A song is one to two layout units of
+// gesture, and this band is 310 x 156, so anything under about 140 leaves the thing
+// you are meant to be watching as a small squiggle in a large dark rectangle — which
+// is what it was at 78 and still was at 100. Long songs now run off the frame, which
+// is fine: the camera holds the head, and the head is the part worth seeing.
+#define ZOOM 145.0f
 
 // The band has more room across than down. Mild, unlike the 2x this needed when it
 // had to fit a whole sphere.
@@ -102,42 +138,89 @@
 // twice a second and the picture would be nothing but travel.
 #define FOCUS_HOLD_MS 1500
 
-// Turn periods, in seconds per revolution. The corpus still drifts under the
-// camera, so a still moment is never quite still.
+// Turn periods, in seconds per revolution: the slow drift that keeps a still moment
+// from being quite still.
 #define TURN_X_S 197.0f
 #define TURN_Y_S 131.0f
 
+/**
+ * How hard the yaw is pulled toward seeing the current gesture broadside, per frame,
+ * and how far back along the thread the gesture's direction is measured.
+ *
+ * A song is mostly a line through space, and a line seen end-on is a dot. Left to a
+ * clock, the drift spends part of every cycle doing exactly that — the gesture
+ * collapses, and the most legible thing on the screen becomes the least. So the yaw
+ * has a target as well as a rate: the angle that puts the thread across the view
+ * rather than along it. The clock keeps pushing away from it and this keeps pulling
+ * back, which leaves the camera hovering near broadside with a slow wobble instead of
+ * either sitting still or rolling through the bad angle.
+ *
+ * Only the yaw is steered. Pitch stays on its clock, because a gesture that is
+ * vertical in world terms is already broadside on the screen's other axis, and
+ * steering both would leave nothing moving.
+ */
+#define YAW_EASE 0.020f
+#define GESTURE_SPAN 10
+
 // ---- the gesture ----------------------------------------------------------
 
-// How far a song's thread advances per frame, in layout units. The median song is
-// six syllables of 67 ms, so it has about twenty frames; at this zoom that comes out
-// near the height of the band.
-#define GROW 0.05f
+// How far a song's thread advances per frame, in layout units. The median song is six
+// syllables of 67 ms, so it has about twenty frames — at this zoom that is a gesture
+// most of the way across the band, and a short two-syllable song still crosses a
+// third of it.
+#define GROW 0.10f
 
 // Pitch, across the thread — outward from the middle of the corpus, since that is
 // the thread's cross axis. A high note pushes away from the centre, a low one pulls
 // in, on the same log axis the spectrogram uses.
-#define WIGGLE 0.5f
+#define WIGGLE 0.55f
 
 // The corkscrew, which is what gives perspective something to work on.
 #define TWIST_AMP 0.15f
 #define TWIST_RATE 0.16f  // radians per frame: about half a turn per song
 
-// ---- the roster -----------------------------------------------------------
-
-// A roster dot, in pixels at the target's depth, and how much of its bird's own hue
-// it gets. Dim: it is a place, not an event. Bright enough to be a mark and never
-// bright enough to be mistaken for a note.
+// ---- what is *not* drawn --------------------------------------------------
 //
-// A dot is drawn *only* for a bird that has sung within ROSTER_MEMORY_MS, and fades
-// out across it. There is no resting brightness, on purpose and at the second
-// attempt: with a floor, a bird that has not had a Poisson arrival in two minutes
-// still sat there as a permanent mark doing nothing, which is the thing that was
-// wrong with drawing the whole roster in the first place. Now the constellation *is*
-// the recent activity — every dot on the band is a bird you heard a moment ago.
-#define ROSTER_R 1.8f
-#define ROSTER_ENV_MAX 0.30f
-#define ROSTER_MEMORY_MS 9000
+// There is no static layer at all, at the third attempt. The corpus was drawn whole,
+// then as a faint bed, then as the roster — the two dozen birds that could sing — and
+// every version had the same fault in a smaller form: marks that sit there not
+// meaning anything. Fading the roster dots by how recently their bird sang did not
+// fix it either, because a dot on its way out still reads as a dot that is doing
+// nothing.
+//
+// So the band shows only what is happening: songs, the crosses struck through them,
+// and the haloed bead at the note being sung. Between songs it goes dark, and that is
+// the correct picture of nothing happening. Trails last about three seconds and songs
+// arrive about every two, so it is rarely empty for long.
+
+// ---- the lattice ----------------------------------------------------------
+//
+// A very faint 3D grid, and the distinction from what GridBurst rejected matters:
+// that was a *screen-space* lattice, which does not move with the cloud and so fights
+// the depth it is meant to establish. This one is in world space. It rotates, it
+// parallaxes, and it is the thing the camera moves against — which only became worth
+// having once the camera started moving at all.
+//
+// The lattice is snapped to the camera in whole steps rather than pinned to the origin,
+// so it is effectively infinite: the camera can travel anywhere in the corpus and the
+// grid is always around it, sliding by in step increments as it goes. That sliding *is*
+// the parallax; a lattice fixed to the origin would run out as soon as the camera left
+// the middle.
+//
+// Faint to the point of being barely there, but **not by multiplying a dark colour
+// down**, which is how the first version of this came out invisible. The panel is
+// RGB565: five bits of blue, so the smallest step it can show at all is 8/255. Taking a
+// grey-blue of (26, 34, 52), converting to 565, and scaling it by 0.07 for depth gives
+// (1.7, 2.3, 3.5) — and every one of those truncates to zero on the way back. The grid
+// was not faint, it was black, and it was black at 0.10 too.
+//
+// So the levels are hand-picked in 565 terms instead: four entries whose blue channel is
+// 1, 2, 3 and 4 of 31, which is the whole usable range between invisible and noticeable.
+// Depth chooses between them. Nothing is multiplied.
+#define GRID_STEP 0.55f   // lattice spacing, layout units
+#define GRID_N 2          // lattice lines each side of the camera, per axis
+#define GRID_SEGS 8       // segments per line: enough to survive perspective
+#define GRID_LEVELS 4
 
 // ---- the strike (GridBurst) -----------------------------------------------
 
@@ -231,8 +314,6 @@ struct Strike {
 
 static Strike s_strike[STRIKES];
 
-// When each roster tag last sounded, for the dot's memory. 0 = never.
-static uint32_t s_lastSang[TRAIL_TAGS];
 
 static M5Canvas s_canvas(&M5.Display);
 static bool s_ready = false;
@@ -240,14 +321,21 @@ static bool s_ready = false;
 static int s_x = 0, s_y = 0, s_w = 0, s_h = 0;
 static uint16_t s_frame = 0;
 
-// Where the camera is looking, how far back it is, and who it is following.
+// Where the camera is looking and how far back it is.
 static float s_camX = 0, s_camY = 0, s_camZ = 0;
 static float s_camDist = CAM_DIST_IDLE;
-static int s_focusTag = -1;
-static uint32_t s_focusMs = 0;
 
-// The drift this frame.
+// The camera's angles, carried rather than derived from the frame counter: the yaw is
+// steered as well as driven (see YAW_EASE) so it cannot be a pure function of time.
+static float s_yaw = 0, s_pitch = 0;
 static float s_cax = 1, s_sax = 0, s_cay = 1, s_say = 0;
+
+// When each tag last sounded, for the framing. 0 = never.
+static uint32_t s_sangMs[TRAIL_TAGS];
+
+// The lattice's four depth levels, built once. See the note on GRID_LEVELS for why
+// these are literals in 565 terms rather than a colour scaled by a float.
+static uint16_t s_grid[GRID_LEVELS];
 
 // ---- helpers --------------------------------------------------------------
 
@@ -309,6 +397,23 @@ static inline void project(float x, float y, float z, float& outX, float& outY,
 }
 
 /**
+ * As project(), but false when the point is at or behind the near plane — where the
+ * perspective divide flips a line inside out instead of clipping it. The lattice needs
+ * this because its lines pass through the camera; nothing else in the picture does.
+ */
+static inline bool projectFront(float x, float y, float z, float& outX, float& outY,
+                                float& outK) {
+    const float dx = x - s_camX;
+    const float dy = y - s_camY;
+    const float dz = z - s_camZ;
+    const float z1 = -dx * s_say + dz * s_cay;
+    const float z2 = dy * s_sax + z1 * s_cax;
+    if (s_camDist + z2 < 0.35f) return false;
+    project(x, y, z, outX, outY, outK);
+    return true;
+}
+
+/**
  * Where a species sits, and the three axes its thread is drawn on.
  *
  * The anchor is the species' first syllable, which is inside its island — close
@@ -356,6 +461,13 @@ static void armFrame(int sp, float* a, float* grow, float* out, float* twist) {
     }
 }
 
+/** Wrap an angle difference into [-pi, pi]. */
+static inline float wrapPi(float a) {
+    while (a > 3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    return a;
+}
+
 /** The newest point of a thread, or false if it has none. */
 static bool trailHead(const Trail& tr, float* p) {
     if (!tr.n) return false;
@@ -363,6 +475,24 @@ static bool trailHead(const Trail& tr, float* p) {
     p[0] = tr.x[k];
     p[1] = tr.y[k];
     p[2] = tr.z[k];
+    return true;
+}
+
+/**
+ * Which way a thread is running, from its head back GESTURE_SPAN points. False when
+ * it is too short or too tight to have a direction worth aiming at.
+ */
+static bool trailDirection(const Trail& tr, float* d) {
+    if (tr.n < 3) return false;
+    const int span = tr.n - 1 < GESTURE_SPAN ? tr.n - 1 : GESTURE_SPAN;
+    const uint8_t a = (uint8_t)((tr.head + TRAIL_LEN - 1) % TRAIL_LEN);
+    const uint8_t b = (uint8_t)((tr.head + TRAIL_LEN - 1 - span) % TRAIL_LEN);
+    d[0] = tr.x[a] - tr.x[b];
+    d[1] = tr.y[a] - tr.y[b];
+    d[2] = tr.z[a] - tr.z[b];
+    const float len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (len < 1e-3f) return false;
+    d[0] /= len; d[1] /= len; d[2] /= len;
     return true;
 }
 
@@ -378,6 +508,13 @@ void galaxyInit(int x, int y, int w, int h) {
     // for the size with the bandwidth. If it will not fit, galaxyFrame() becomes a
     // no-op rather than a crash — the band stays black and everything else on the
     // screen still works.
+    // Blue channel 1, 2, 3, 4 of 31. Checked against color565(): every one of these
+    // survives the round trip, which is the whole point of writing them out.
+    s_grid[0] = M5.Display.color565(0, 4, 8);
+    s_grid[1] = M5.Display.color565(4, 8, 16);
+    s_grid[2] = M5.Display.color565(8, 12, 24);
+    s_grid[3] = M5.Display.color565(12, 16, 33);
+
     s_canvas.setPsram(false);
     s_canvas.setColorDepth(16);
     s_ready = s_canvas.createSprite(s_w, s_h) != nullptr;
@@ -398,10 +535,10 @@ void galaxyReset() {
         t.lastMs = 0;
     }
     for (auto& st : s_strike) st.live = false;
-    memset(s_lastSang, 0, sizeof(s_lastSang));
+    memset(s_sangMs, 0, sizeof(s_sangMs));
     s_frame = 0;
-    s_focusTag = -1;
-    s_focusMs = 0;
+    s_yaw = 0.0f;
+    s_pitch = 0.0f;
     s_camX = s_camY = s_camZ = 0.0f;
     s_camDist = CAM_DIST_IDLE;
     if (s_ready) {
@@ -414,13 +551,10 @@ void galaxyFrame() {
     if (!s_ready) return;
     s_frame++;
 
-    const float t = (float)s_frame * 0.04f;  // uiFrame() is paced at 25 Hz
-    const float ax = t * (6.283185f / TURN_X_S);
-    const float ay = t * (6.283185f / TURN_Y_S);
-    s_cax = cosf(ax);
-    s_sax = sinf(ax);
-    s_cay = cosf(ay);
-    s_say = sinf(ay);
+    // The clock's share of the drift. The yaw gets a target as well, further down,
+    // once there is a gesture to aim at.
+    s_pitch += 6.283185f / TURN_X_S * 0.04f;  // uiFrame() is paced at 25 Hz
+    s_yaw += 6.283185f / TURN_Y_S * 0.04f;
 
     // ---- who is singing ----------------------------------------------------
     // One point per tag per frame, whatever the voice count: two syllables of the
@@ -474,7 +608,7 @@ void galaxyFrame() {
         tr.head = (uint8_t)((k + 1) % TRAIL_LEN);
         if (tr.n < TRAIL_LEN) tr.n++;
         tr.songAge++;
-        s_lastSang[tag] = now;
+        s_sangMs[tag] = now;
 
         // A new song strikes the grid where it started. An existing cross close
         // enough to be the same mark is refreshed instead of joined by a second one.
@@ -498,44 +632,148 @@ void galaxyFrame() {
         }
     }
 
-    // ---- aim the camera ----------------------------------------------------
-    // The loudest bird takes the camera, but only once the last one has been quiet
-    // for FOCUS_HOLD_MS. Whoever holds it keeps it while they sing.
+    // ---- who is loudest, and which birds are in the shot -------------------
+    // Every bird that has sounded within FRAME_HOLD_MS is framed, so the shot does not
+    // snap wider the instant a syllable ends.
     int loudestTag = -1;
     float loudestEnv = 0.0f;
+    int inShot[TRAIL_TAGS];
+    float head[TRAIL_TAGS][3];
+    int shot = 0;
+    float sum[3] = {0.0f, 0.0f, 0.0f};
+
     for (int tag = 0; tag < TRAIL_TAGS; tag++) {
         if (loudest[tag] > loudestEnv) {
             loudestEnv = loudest[tag];
             loudestTag = tag;
         }
-    }
-    if (s_focusTag >= 0 && loudest[s_focusTag] > 0.0f) {
-        s_focusMs = now;
-    } else if (loudestTag >= 0 && (s_focusTag < 0 || (now - s_focusMs) > FOCUS_HOLD_MS)) {
-        s_focusTag = loudestTag;
-        s_focusMs = now;
-    }
-
-    const float wantDist = (loudestTag >= 0) ? CAM_DIST_NEAR : CAM_DIST_IDLE;
-    s_camDist += (wantDist - s_camDist) * DOLLY_EASE;
-
-    // Follow the *head* of the focused song rather than the species' island: the
-    // head is where the note is, and keeping it near the middle is what makes the
-    // trail stream away behind it instead of wandering out of frame.
-    float want[3];
-    if (s_focusTag >= 0 && trailHead(s_trail[s_focusTag], want)) {
-        s_camX += (want[0] - s_camX) * CAM_EASE;
-        s_camY += (want[1] - s_camY) * CAM_EASE;
-        s_camZ += (want[2] - s_camZ) * CAM_EASE;
+        if (!s_sangMs[tag] || (now - s_sangMs[tag]) > FRAME_HOLD_MS) continue;
+        if (!trailHead(s_trail[tag], head[shot])) continue;
+        sum[0] += head[shot][0];
+        sum[1] += head[shot][1];
+        sum[2] += head[shot][2];
+        inShot[shot] = tag;
+        shot++;
     }
 
-    // ---- draw: the strikes, under everything -------------------------------
+    // ---- steer the yaw away from looking down the gesture -------------------
+    // The view direction in world terms is (-say*cax, sax, cay*cax); its horizontal
+    // part is (-say, cay). Broadside means that is perpendicular to the thread's
+    // horizontal direction, which is one atan2. The two solutions are pi apart, so take
+    // whichever is the shorter turn from here — the other is a 180 degree swing to an
+    // identical-looking shot.
+    float g[3];
+    if (loudestTag >= 0 && trailDirection(s_trail[loudestTag], g)) {
+        if (g[0] * g[0] + g[2] * g[2] > 0.02f) {  // a thread straight up has no yaw to fix
+            const float wantYaw = atan2f(g[2], g[0]);
+            float d = wrapPi(wantYaw - s_yaw);
+            const float alt = wrapPi(wantYaw + 3.14159265f - s_yaw);
+            if (fabsf(alt) < fabsf(d)) d = alt;
+            s_yaw += d * YAW_EASE;
+        }
+    }
+
+    s_cax = cosf(s_pitch);
+    s_sax = sinf(s_pitch);
+    s_cay = cosf(s_yaw);
+    s_say = sinf(s_yaw);
+
+    // ---- pan to the singers, then fit them ---------------------------------
+    if (shot > 0) {
+        const float cx = sum[0] / (float)shot;
+        const float cy = sum[1] / (float)shot;
+        const float cz = sum[2] / (float)shot;
+        s_camX += (cx - s_camX) * CAM_EASE;
+        s_camY += (cy - s_camY) * CAM_EASE;
+        s_camZ += (cz - s_camZ) * CAM_EASE;
+
+        // How much of the band the current gesture actually covers, at the distance we
+        // are at now. Walked backwards from each head and stopped at the first `brk`,
+        // which is where this song started: the ring still holds the previous song's
+        // points and they sit a long way off, so including them drove the fit to nearly
+        // twice the distance it wanted and shrank a growing song instead of following it.
+        float fill = 0.0f;
+        for (int i = 0; i < shot; i++) {
+            const Trail& tr = s_trail[inShot[i]];
+            for (int j = 0; j < tr.n; j++) {
+                const uint8_t k = (uint8_t)((tr.head + TRAIL_LEN - 1 - j) % TRAIL_LEN);
+                if ((uint16_t)(s_frame - tr.born[k]) >= TRAIL_LEN) break;
+                float X, Y, persp;
+                project(tr.x[k], tr.y[k], tr.z[k], X, Y, persp);
+                const float fx = fabsf(X - (float)s_w * 0.5f) / ((float)s_w * 0.5f);
+                const float fy = fabsf(Y - (float)s_h * 0.5f) / ((float)s_h * 0.5f);
+                if (fx > fill) fill = fx;
+                if (fy > fill) fill = fy;
+                if (tr.brk[k]) break;  // start of this song; earlier points are another
+            }
+        }
+
+        float want = fill > 0.01f ? s_camDist * fill / FIT_FRAC : CAM_DIST_NEAR;
+        if (want < CAM_DIST_NEAR) want = CAM_DIST_NEAR;
+        else if (want > CAM_DIST_FAR) want = CAM_DIST_FAR;
+        s_camDist += (want - s_camDist) * DOLLY_EASE;
+    } else {
+        s_camDist += (CAM_DIST_IDLE - s_camDist) * DOLLY_EASE;
+    }
+
+    // ---- draw: the lattice, under everything -------------------------------
+    s_canvas.fillSprite(TFT_BLACK);
+
+    {
+        // Snap the lattice to the camera in whole steps: the grid is always around
+        // wherever the camera has got to, and slides by as it travels.
+        const float base[3] = {
+            floorf(s_camX / GRID_STEP) * GRID_STEP,
+            floorf(s_camY / GRID_STEP) * GRID_STEP,
+            floorf(s_camZ / GRID_STEP) * GRID_STEP,
+        };
+        const float span = GRID_STEP * (float)GRID_N;
+
+        for (int axis = 0; axis < 3; axis++) {
+            const int b = (axis + 1) % 3;
+            const int c = (axis + 2) % 3;
+            for (int i = -GRID_N; i <= GRID_N; i++) {
+                for (int j = -GRID_N; j <= GRID_N; j++) {
+                    float p[3];
+                    p[b] = base[b] + (float)i * GRID_STEP;
+                    p[c] = base[c] + (float)j * GRID_STEP;
+
+                    float prevX = 0, prevY = 0;
+                    bool havePrev = false;
+                    for (int k = 0; k <= GRID_SEGS; k++) {
+                        p[axis] = base[axis] - span
+                                  + 2.0f * span * (float)k / (float)GRID_SEGS;
+                        float X, Y, persp;
+                        if (!projectFront(p[0], p[1], p[2], X, Y, persp)) {
+                            havePrev = false;
+                            continue;
+                        }
+                        if (havePrev) {
+                            // Depth is the only thing keeping this readable: without it
+                            // the far lattice is as strong as the near one and the band
+                            // turns to mesh. It picks a level, it does not scale a colour.
+                            float d = persp * s_camDist / CAM_F;  // 1 at the target depth
+                            int lvl = (int)((d - 0.55f) * (float)GRID_LEVELS / 0.9f);
+                            if (lvl < 0) lvl = 0;
+                            else if (lvl >= GRID_LEVELS) lvl = GRID_LEVELS - 1;
+                            s_canvas.drawLine((int)prevX, (int)prevY, (int)X, (int)Y,
+                                              s_grid[lvl]);
+                        }
+                        prevX = X;
+                        prevY = Y;
+                        havePrev = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- draw: the strikes, over the lattice --------------------------------
     // Three axis-aligned rules through each live strike. The rules are world axes, so
     // they turn with the corpus and read as depth, but their *length* is quoted in
     // pixels against the band — GridBurst's `reachOfView`, and the reason a strike is
     // the same size on screen whether the camera is dollied in or out.
-    s_canvas.fillSprite(TFT_BLACK);
-
+    //
     // Long enough to leave the frame from anywhere in it, whatever the camera is
     // doing: a rule that stops inside the picture is a cross, not a grid line.
     const float reachPx = STRIKE_REACH * sqrtf((float)(s_w * s_w + s_h * s_h));
@@ -592,45 +830,6 @@ void galaxyFrame() {
                 }
             }
         }
-    }
-
-    // ---- draw: the roster, over the strikes ---------------------------------
-    // One dot per *species*, not per tag: the two individuals of a species share an
-    // island, so drawing both put two dots in the same place and made the constellation
-    // look doubled. Brightness is the more recent of the pair's memories.
-    const int roster = chorusRosterSize();
-    for (int tag = 0; tag < roster && tag < TRAIL_TAGS; tag++) {
-        const int sp = chorusSpeciesForTag((uint8_t)tag);
-        if (sp < 0 || (size_t)(sp + 1) >= sizeof(GALAXY_ISLAND) / sizeof(GALAXY_ISLAND[0])) {
-            continue;
-        }
-        // Skip a tag whose species an earlier tag already drew.
-        bool drawn = false;
-        for (int j = 0; j < tag; j++) {
-            if (chorusSpeciesForTag((uint8_t)j) == sp) { drawn = true; break; }
-        }
-        if (drawn) continue;
-
-        // How recently this species sang, over either of its individuals.
-        uint32_t last = 0;
-        for (int j = 0; j < roster && j < TRAIL_TAGS; j++) {
-            if (chorusSpeciesForTag((uint8_t)j) == sp && s_lastSang[j] > last) {
-                last = s_lastSang[j];
-            }
-        }
-        if (!last) continue;  // never sung: not a mark
-        const uint32_t since = now - last;
-        if (since >= ROSTER_MEMORY_MS) continue;  // sang, but long enough ago to be gone
-        float mem = 1.0f - (float)since / (float)ROSTER_MEMORY_MS;
-        mem *= mem;  // most of the glow belongs to the last second or two
-
-        const GalaxyPoint& p = GALAXY[GALAXY_ISLAND[sp]];
-        float X, Y, persp;
-        project((float)p.x * GALAXY_SCALE, (float)p.y * GALAXY_SCALE,
-                (float)p.z * GALAXY_SCALE, X, Y, persp);
-        if (X < -4.0f || Y < -4.0f || X > (float)s_w + 4.0f || Y > (float)s_h + 4.0f) continue;
-        s_canvas.drawSpot((int)X, (int)Y, ROSTER_R * persp * (0.7f + 0.6f * mem),
-                          uiVoiceColor((uint8_t)tag, ROSTER_ENV_MAX * mem, all));
     }
 
     // ---- draw: the songs, over it ------------------------------------------
@@ -692,10 +891,7 @@ void galaxyFrame() {
 
         // Nothing of this thread is still alive; let the slot go so a new song
         // starts from an empty ring rather than walking dead points.
-        if (!alive) {
-            tr.n = 0;
-            if (s_focusTag == tag) s_focusTag = -1;
-        }
+        if (!alive) tr.n = 0;
     }
 
     s_canvas.pushSprite(s_x, s_y);

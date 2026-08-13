@@ -154,12 +154,25 @@ dot. That is the parent's `shaders.ts` device (`uPointSize * (0.85 + vPeak * 2.4
 says where the note *is*, more precisely than a thickening line) and its `ribbon.ts` finding
 (a one-pixel thread disappears; a song needs real width).
 
-The **camera** is `Framing.svelte` scaled to a panel: the loudest bird takes it, keeps it
-while it sings, and holds it `FOCUS_HOLD_MS` after — without that hold, 34 songs a minute
-would re-aim it twice a second and the picture would be nothing but travel. It follows the
-*head* of the song rather than the species' island, so the thread streams away behind
-instead of wandering out of frame, and eases at `CAM_EASE` (about 1.5 s to arrive; a cut on
-this screen reads as a glitch).
+The **camera** is `Framing.svelte` scaled to a panel, and it **frames the set rather than
+picking a favourite**. Every bird that has sounded within `FRAME_HOLD_MS` is in the shot;
+the target is their centroid and the distance is solved so their spread fills `FIT_FRAC` of
+the half-height, clamped to `[CAM_DIST_NEAR, CAM_DIST_FAR]`. One rule covers both cases that
+matter: one bird has a spread of zero, clamps to the nearest shot and gets the big single
+gesture; two singing at once are shown *together* instead of the camera choosing one and
+losing the other off-frame. It follows heads rather than islands, so threads stream away
+behind, and eases at `CAM_EASE` — about 1.5 s to arrive, because a cut on this screen reads
+as a glitch.
+
+**The yaw is steered, not just driven.** A song is mostly a line through space, and a line
+seen end-on is a dot — so a purely clock-driven drift spends part of every cycle collapsing
+the most legible thing on the screen into the least. The yaw therefore has a target as well
+as a rate: the angle that puts the loudest bird's thread across the view rather than along
+it, which is one `atan2` on the thread's horizontal direction. Of the two solutions π apart
+it takes the shorter turn, since the other is a 180° swing to an identical-looking shot. The
+clock pushes away and the steering pulls back, so the camera hovers near broadside with a
+slow wobble. Only the yaw: a thread that is vertical in world terms is already broadside on
+the screen's other axis, and steering both would leave nothing moving.
 
 It stays accurate under all of it. Every mark is a measurement: position is the species'
 place in the corpus, distance from the middle is the f0 being sung on the spectrogram's own
@@ -178,12 +191,41 @@ closed each thread into a loop, so the depth cue became the shape; the bed's `MA
 a lone syllable at RGB (0, 2, 34), which on a dark panel is black; and at `ZOOM` 105 with
 no roster the band was one thread in a void.
 
-**The grid is GridBurst, and that is the answer to "can we have a faint 3D grid".** The
-parent tried both obvious versions and rejected them, in its own words: *a flat lattice over
-the whole window does not move with the cloud, so it fights the depth it is supposed to
-establish*, and a ground plane is *a permanent floor under a corpus that has no floor*. So
-the grid is struck, not standing: each new song lays a cross of three axis-aligned dashed
-rules through the bird that started it, rising over ~0.15 s and gone by ~1.8 s.
+**There are two grids, and they answer different halves of the same question.**
+
+*The struck one* is GridBurst: each new song lays a cross of three axis-aligned dashed rules
+through the bird that started it, rising over ~0.15 s and gone by ~1.8 s.
+
+*The standing one* is a world-space lattice, very faint, under everything. The parent
+rejected a grid twice — *a flat lattice over the whole window does not move with the cloud,
+so it fights the depth it is supposed to establish*, and a ground plane is *a permanent floor
+under a corpus that has no floor* — and both objections are about a **screen-space** lattice
+or a floor. This is neither: it is in world space, it rotates and parallaxes, and it only
+became worth having once the camera started moving, because a moving camera with nothing
+static in frame is a camera you cannot see move.
+
+**Its levels are literals in RGB565, and that is a bug fix.** The first version picked one
+grey-blue and scaled it by depth — 0.07 of (26, 34, 52) is (1.7, 2.3, 3.5), which is fine in
+24-bit and is `0x0000` after the round trip through five bits of blue. The grid was not faint
+on the panel, it was *absent*, and it was absent at 0.10 too. There are now four hand-picked
+entries whose blue channel is 1, 2, 3 and 4 of 31 — the whole usable range between invisible
+and noticeable — and depth chooses between them rather than multiplying anything.
+
+`tools/preview_galaxy.py` drew that invisible grid beautifully, because it wrote 24-bit
+colour. It now puts **every** colour through 565 the way the hardware does, which is the
+reason this class of mistake cannot hide in it again. If a mark would round to black on the
+panel, the preview shows black.
+
+It is snapped to the camera in whole `GRID_STEP`s rather than pinned to the origin, so it is
+effectively infinite — the camera can travel anywhere in the corpus and the grid is always
+around it, sliding by in step increments. That sliding *is* the parallax; a lattice fixed to
+the origin runs out the moment the camera leaves the middle. `GRID_AMP` is scaled by depth so
+only the near lines register, and it is the dial if the reference ever starts competing with
+the song.
+
+Its lines pass through the camera, which nothing else in the picture does, so it needs
+`projectFront()` — a perspective divide at or behind the near plane turns a line inside out
+rather than clipping it.
 
 Two details of that are load-bearing and both come straight from GridBurst:
 
@@ -208,6 +250,47 @@ species share an island, so drawing both put two dots in the same place.
 **The camera dollies as well as pans.** `CAM_DIST_NEAR` while anything is singing,
 `CAM_DIST_IDLE` between songs, eased slower than the pan so a push-in reads as a push-in
 rather than as the picture changing size.
+
+The band went through two more rounds after the strikes went in, both on the owner's look
+and both worth recording because they were the same mistake twice:
+
+- **The roster is gone, at the third attempt.** Drawn whole, then as a faint bed, then as
+  the roster; then the roster dots were faded by how recently their bird sang. Every version
+  had the same fault in a smaller form — marks sitting there not meaning anything — and
+  fading did not fix it, because a dot on its way out still reads as a dot doing nothing.
+  There is no static layer at all now. Between songs the band is dark, which is the correct
+  picture of nothing happening; trails last about three seconds and songs arrive about every
+  two, so it is rarely empty for long.
+- **The rules were too strong and stopped inside the frame.** A rule with visible ends is a
+  cross sitting on a dot, not a grid line; and at full strength the scaffolding overlaid the
+  song it was supposed to be a reference for. `STRIKE_REACH` is now the band's diagonal, so
+  a rule always leaves the picture, `STRIKE_AMP` holds it at 30 %, and the dashes are
+  sparser (2 on, 7 off).
+
+**The fit is measured in screen space, on both axes, over the current song only.** Two
+corrections live in that sentence. Solving it as a world radius against the half-*height*
+meant a broadside gesture — which is exactly what the yaw steering works to produce — was
+fitted to the short axis of a 310 x 156 band and used a third of the long one. And measuring
+over every live trail point included the *previous* song, still sitting in the ring a long
+way off, which drove the distance to nearly twice what it wanted and shrank a growing song
+instead of following it; the walk now stops at the first `brk`. The cost of screen space is
+that it is a feedback loop on last frame's distance rather than a closed form, which at these
+easing rates is invisible.
+
+So a single song eases the camera back as it grows — the gesture keeps filling the frame
+instead of running off it — and that is the same mechanism that fits two birds together.
+
+**Zoom is set so activity owns the screen.** `ZOOM` went 78 → 100 → 145 and
+`CAM_DIST_NEAR` 2.0 → 1.5, with `GROW` doubled to 0.10. At the earlier values a song was a
+small squiggle in a large dark rectangle, which is exactly what the band is for *not* being.
+A median song now sweeps most of the way across; long ones run off the frame, which is fine
+because the camera holds the head and the head is the part worth seeing.
+
+Two things were added with the strikes: the cross now **follows its bird** rather than staying
+where the song started — GridBurst had to make the same change once its knots could move,
+since a strike that keeps old coordinates ends up ruling lines through empty space — and the
+head bead has a **halo**, three concentric dimming spots under it. With no bloom pass to
+spend on a panel, that is the whole trick for making a mark read as a light.
 
 **Nothing about the band has been seen on hardware.** The preview settles composition and
 says nothing about how that panel treats a thin dark-green line at an angle.
@@ -442,9 +525,9 @@ something that no longer exists.
 
 ## Power — the pause timeout, and the Fire's red button
 
-**Paused for a minute and the board turns itself off** (`PAUSE_OFF_MS` in src/main.cpp).
-It draws a line saying why first, because a screen that goes black on its own is
-indistinguishable from a flat battery or a crash.
+**Paused for a minute and the board goes dark** (`PAUSE_OFF_MS` in src/main.cpp). It says
+why first, because a screen that blanks on its own is indistinguishable from a flat battery
+or a crash.
 
 What "off" means is not the same on both boards, and is not this code's choice:
 
@@ -453,10 +536,26 @@ What "off" means is not the same on both boards, and is not this code's choice:
 | CoreS3 | AXP2101 | cuts the rail. Actually off. |
 | Fire | IP5306 | releases the boost keep-on and **returns** |
 
-So on the Fire, `powerOff()` is enough on battery — the regulator drops the rail under
-light load — and cannot work on USB, where the charger is holding the rail up. `sleepNow()`
-therefore calls `deepSleep(0, true)` after it: on USB the board ends up dark, drawing
-little, waking on a button. Both calls, in that order, and the order matters.
+**There is no deep sleep here, and that is a bug fix rather than a preference.** The first
+version called `powerOff()` and then `deepSleep(0, true)`. On the Fire that pair fights
+itself — `powerOff()` sets boost keep-on *false*, then `deepSleep()` sets it *true* again —
+and, far worse, a deep sleep ends in a **reboot**, which runs `setup()` and starts the
+chorus. So a paused Fire went quiet, slept, took any wake on its wakeup pin, and came back
+*singing*. Reported from the outside as "I paused it and after a while it started again;
+only the second pause works", which is the same race landing the other way.
+
+So `sleepNow()` silences the audio, blanks the screen, sets the backlight to 0 and calls
+`powerOff()`. On the CoreS3 nothing after that runs. On the Fire it returns and the board
+stays put — dark, paused, not rebooting. A button release brings the screen back and the
+chorus is still paused, because nothing ever restarted it. The first press after waking is
+swallowed on purpose: waking into a volume change because of the press that woke you is
+worse than needing two presses.
+
+Related, and worth knowing before touching that code: `Button_Class::pressedFor(ms)` is
+`_press && (_lastMsec - _lastChange >= ms)` — **true on every pass** once the threshold is
+crossed, not once. `bHoldHandled` is what makes the B hold one toggle, and there is now a
+400 ms guard behind it as well, so pause and resume cannot land inside one gesture whatever
+the button layer does. Both transitions log to serial.
 
 **The Fire's red button is a short press twice, not a long press.** This is the answer to
 "does the power button work" and it is not our code at all — M5Unified programs the IP5306

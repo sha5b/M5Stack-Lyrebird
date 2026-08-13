@@ -7,10 +7,17 @@ a stand-in chorus, and writes a PNG. The point is tuning: GROW, WIGGLE, TWIST_AM
 and FILL decide whether an arm is a gesture or a scribble, and finding that out by
 reflashing a board is a slow way to work.
 
-Same standing as tools/verify_syrinx.py — a host re-implementation of the maths,
-not a build of the firmware. The chorus here is a stand-in (evenly spaced songs, a
-synthetic contour), so it settles composition and says nothing about how the real
-Poisson arrivals bunch up, or how the panel treats a dim colour.
+Every colour is put through **RGB565**, the same five/six/five bits the panel has,
+because writing 8-bit colour here once hid a real bug: the lattice was drawn by scaling
+a dark grey-blue down for depth, which came to (1.7, 2.3, 3.5) — fine in 24-bit, and
+literally 0x0000 after the round trip. The grid was not faint on the device, it was
+absent, and this file drew it beautifully. Anything dark is now quantised the way the
+hardware quantises it.
+
+Same standing as tools/verify_syrinx.py otherwise — a host re-implementation of the
+maths, not a build of the firmware. The chorus here is a stand-in (evenly spaced songs,
+a synthetic contour), so it settles composition and says nothing about how the real
+Poisson arrivals bunch up, or about the panel's gamma and viewing angle.
 
 No dependencies; it writes the PNG itself.
 
@@ -32,16 +39,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BAND_W, BAND_H = 310, 156   # PLOT_W, PLOT_H in src/ui.cpp
 FPS = 25                    # FRAME_MS in src/main.cpp
 TURN_X_S, TURN_Y_S = 197.0, 131.0
-CAM_DIST_NEAR = 1.8
-CAM_DIST_IDLE = 2.9
+CAM_DIST_NEAR = 1.5
+CAM_DIST_IDLE = 2.2
+CAM_DIST_FAR = 6.0
+FRAME_HOLD_MS = 1200
+YAW_EASE = 0.020
+GESTURE_SPAN = 10
 DOLLY_EASE = 0.035
 CAM_F = 2.0
-ZOOM = 100.0
+ZOOM = 145.0
 STRETCH_X = 1.3
 CAM_EASE = 0.06
 FOCUS_HOLD_MS = 1500
-GROW = 0.05
-WIGGLE = 0.5
+GROW = 0.10
+WIGGLE = 0.55
 TWIST_AMP = 0.15
 TWIST_RATE = 0.16
 DOT_R_QUIET = 0.55
@@ -50,6 +61,13 @@ BEAD_R = 3.4
 ROSTER_R = 1.8
 ROSTER_ENV_MAX = 0.30
 ROSTER_MEMORY_MS = 9000
+GRID_STEP = 0.55
+GRID_N = 2
+GRID_SEGS = 8
+GRID_LEVELS = 4
+# Hand-picked in 565 terms, matching src/galaxy.cpp: blue channel 1..4 of 31.
+GRID_RAMP = [(0, 4, 8), (4, 8, 16), (8, 12, 24), (12, 16, 33)]
+FIT_FRAC = 0.80
 STRIKES = 6
 STRIKE_REACH = 1.0
 STRIKE_DASH = 2
@@ -113,6 +131,16 @@ def arm_frame(sp, pts, islands, gscale):
     return a, grow, out, twist
 
 
+def q565(c):
+    """A colour as the panel would actually store and show it: 5/6/5 bits, truncated.
+
+    The one thing this file must not do is flatter the hardware. A channel under 8 is
+    black in five bits, and pretending otherwise is how an invisible grid got shipped.
+    """
+    r, g, b = (max(0, min(255, int(v))) for v in c)
+    return ((r >> 3) << 3, (g >> 2) << 2, (b >> 3) << 3)
+
+
 def voice_color(tag, env, roster=24):
     """src/ui.cpp's uiVoiceColor(), all-birds branch, as 8-bit RGB."""
     pairs = max(1, roster // 2)
@@ -121,7 +149,7 @@ def voice_color(tag, env, roster=24):
     e = min(1.0, max(0.0, env))
     val *= 0.25 + 0.75 * math.sqrt(e)
     r, g, b = colorsys.hsv_to_rgb(hue % 1.0, 0.85, val)
-    return int(r * 255), int(g * 255), int(b * 255)
+    return q565((r * 255, g * 255, b * 255))
 
 
 def simulate(pts, islands, gscale, until_frame, birds):
@@ -182,12 +210,21 @@ def simulate(pts, islands, gscale, until_frame, birds):
 
 
 def camera(trails, frame):
-    """Re-run src/galaxy.cpp's focus, dolly, strikes and roster memory to `frame`."""
+    """Re-run src/galaxy.cpp's framing, dolly, yaw steering and strikes to `frame`."""
     cam = [0.0, 0.0, 0.0]
     dist = CAM_DIST_IDLE
-    focus, focus_ms = -1, 0
-    strikes = []          # (x, y, z, born, colour_tag)
-    last_sang = {}
+    yaw, pitch = 0.0, 0.0
+    strikes = []          # (x, y, z, born, tag)
+    sang = {}
+    shots = 0             # birds in the last frame's shot, for reporting
+
+    def wrap_pi(a):
+        while a > math.pi:
+            a -= 2 * math.pi
+        while a < -math.pi:
+            a += 2 * math.pi
+        return a
+
     for f in range(frame + 1):
         now_ms = f * 1000 // FPS
         live = {}
@@ -195,45 +232,78 @@ def camera(trails, frame):
             for (x, y, z, born, brk, env) in pts:
                 if born == f:
                     live[tag] = (env, (x, y, z))
-        for tag in live:
-            last_sang[tag] = f * 1000 // FPS
-        # a fresh song strikes the grid, merging into a nearby live cross
-        for tag, pts in trails.items():
-            for (x, y, z, born, brk, env) in pts:
-                if born == f and brk:
-                    merged = False
-                    for i, (sx, sy, sz, sb, stag) in enumerate(strikes):
-                        if (f - sb) < STRIKE_LIFE and (
-                                (sx - x) ** 2 + (sy - y) ** 2 + (sz - z) ** 2
-                                < STRIKE_MERGE ** 2):
-                            strikes[i] = (sx, sy, sz, f, stag)
-                            merged = True
-                            break
-                    if not merged:
+                    sang[tag] = now_ms
+                    if brk:
+                        strikes[:] = [st for st in strikes if st[4] != tag]
                         strikes.append((x, y, z, f, tag))
                         strikes[:] = [st for st in strikes
                                       if (f - st[3]) < STRIKE_LIFE][-STRIKES:]
-        loudest = max(live.items(), key=lambda kv: kv[1][0])[0] if live else -1
-        if focus >= 0 and focus in live:
-            focus_ms = now_ms
-        elif loudest >= 0 and (focus < 0 or (now_ms - focus_ms) > FOCUS_HOLD_MS):
-            focus, focus_ms = loudest, now_ms
-        # follow the head of the focused song
-        head = None
-        for (x, y, z, born, brk, env) in trails.get(focus, []):
-            if born <= f:
-                head = (x, y, z)
-        dist += ((CAM_DIST_NEAR if live else CAM_DIST_IDLE) - dist) * DOLLY_EASE
-        if head:
+
+        pitch += 2 * math.pi / TURN_X_S / FPS
+        yaw += 2 * math.pi / TURN_Y_S / FPS
+
+        # heads of every bird in the shot
+        heads = []
+        for tag, last in sang.items():
+            if now_ms - last > FRAME_HOLD_MS:
+                continue
+            h = None
+            for (x, y, z, b, brk, env) in trails.get(tag, []):
+                if b <= f:
+                    h = (x, y, z)
+            if h:
+                heads.append(h)
+        shots = len(heads)
+
+        if heads:
+            c = [sum(h[i] for h in heads) / len(heads) for i in range(3)]
+            # over everything drawn, not just the heads, so a growing song eases back
+            spread = 0.0
+            for tag, last in sang.items():
+                if now_ms - last > FRAME_HOLD_MS:
+                    continue
+                # backwards from the head, stopping at the start of this song
+                for (x, y, z, b, brk, env) in reversed(
+                        [q for q in trails.get(tag, []) if q[3] <= f]):
+                    if (f - b) >= TRAIL_LEN:
+                        break
+                    spread = max(spread, math.dist((x, y, z), c))
+                    if brk:
+                        break
+            want = min(CAM_DIST_FAR,
+                       max(CAM_DIST_NEAR,
+                           spread * ZOOM * CAM_F / (FIT_FRAC * BAND_H * 0.5)))
+            dist += (want - dist) * DOLLY_EASE
             for i in range(3):
-                cam[i] += (head[i] - cam[i]) * CAM_EASE
-    return cam, dist, strikes, last_sang
+                cam[i] += (c[i] - cam[i]) * CAM_EASE
+        else:
+            dist += (CAM_DIST_IDLE - dist) * DOLLY_EASE
+
+        # steer the yaw broadside to the loudest bird's thread
+        if live:
+            tag = max(live.items(), key=lambda kv: kv[1][0])[0]
+            pts = [p for p in trails[tag] if p[3] <= f]
+            if len(pts) >= 3:
+                span = min(GESTURE_SPAN, len(pts) - 1)
+                a, b = pts[-1], pts[-1 - span]
+                g = [a[i] - b[i] for i in range(3)]
+                L = math.sqrt(sum(v * v for v in g))
+                if L > 1e-3:
+                    g = [v / L for v in g]
+                    if g[0] ** 2 + g[2] ** 2 > 0.02:
+                        want_yaw = math.atan2(g[2], g[0])
+                        d = wrap_pi(want_yaw - yaw)
+                        alt = wrap_pi(want_yaw + math.pi - yaw)
+                        if abs(alt) < abs(d):
+                            d = alt
+                        yaw += d * YAW_EASE
+
+    return cam, dist, strikes, yaw, pitch, shots
 
 
-def render(trails, frame, cam, dist, strikes, last_sang, roster, species_of):
-    t = frame / FPS
-    cax, sax = math.cos(t * 2 * math.pi / TURN_X_S), math.sin(t * 2 * math.pi / TURN_X_S)
-    cay, say = math.cos(t * 2 * math.pi / TURN_Y_S), math.sin(t * 2 * math.pi / TURN_Y_S)
+def render(trails, frame, cam, dist, strikes, yaw, pitch):
+    cax, sax = math.cos(pitch), math.sin(pitch)
+    cay, say = math.cos(yaw), math.sin(yaw)
 
     def project(x, y, z):
         dx, dy, dz = x - cam[0], y - cam[1], z - cam[2]
@@ -250,7 +320,7 @@ def render(trails, frame, cam, dist, strikes, last_sang, roster, species_of):
     def put(x, y, c):
         if 0 <= x < BAND_W and 0 <= y < BAND_H:
             o = (y * BAND_W + x) * 3
-            rgb[o:o + 3] = bytes(c)
+            rgb[o:o + 3] = bytes(q565(c))
 
     def spot(cx, cy, r, c):
         ri = int(r + 0.5)
@@ -269,7 +339,37 @@ def render(trails, frame, cam, dist, strikes, last_sang, roster, species_of):
                  r0 + (r1 - r0) * f, c)
 
     def dim(c, amp):
-        return tuple(int(v * amp) for v in c)
+        # Quantised, so a dim result that the panel would round to black shows as black.
+        return q565(tuple(v * max(0.0, min(1.0, amp)) for v in c))
+
+    # the lattice, under everything: world-space, snapped to the camera in whole steps
+    base = [math.floor(cam[i] / GRID_STEP) * GRID_STEP for i in range(3)]
+    span = GRID_STEP * GRID_N
+    for axis in range(3):
+        b, c2 = (axis + 1) % 3, (axis + 2) % 3
+        for i in range(-GRID_N, GRID_N + 1):
+            for j in range(-GRID_N, GRID_N + 1):
+                p = [0.0, 0.0, 0.0]
+                p[b] = base[b] + i * GRID_STEP
+                p[c2] = base[c2] + j * GRID_STEP
+                prev = None
+                for k in range(GRID_SEGS + 1):
+                    p[axis] = base[axis] - span + 2 * span * k / GRID_SEGS
+                    dx, dy, dz = (p[0] - cam[0], p[1] - cam[1], p[2] - cam[2])
+                    z1 = -dx * say + dz * cay
+                    z2 = dy * sax + z1 * cax
+                    if dist + z2 < 0.35:
+                        prev = None
+                        continue
+                    X, Y, persp = project(*p)
+                    if prev:
+                        # Depth picks a level; it does not scale a colour. See q565.
+                        d = persp * dist / CAM_F
+                        lvl = max(0, min(GRID_LEVELS - 1,
+                                         int((d - 0.55) * GRID_LEVELS / 0.9)))
+                        wedge(prev[0], prev[1], 0.4, int(X), int(Y), 0.4,
+                              q565(GRID_RAMP[lvl]))
+                    prev = (int(X), int(Y))
 
     # the strikes, under everything: three world axes, length quoted in pixels
     reach = STRIKE_REACH * math.hypot(BAND_W, BAND_H)
@@ -307,26 +407,6 @@ def render(trails, frame, cam, dist, strikes, last_sang, roster, species_of):
                     for t2 in range(STRIKE_DASH + 1):
                         put(int(cx + dx * (d + t2) * side), int(cy + dy * (d + t2) * side), c)
                     d += STRIKE_DASH + STRIKE_GAP
-
-    # the roster, over the strikes: one dot per species, lit by how recently it sang
-    seen = set()
-    for tag, (px, py, pz) in roster.items():
-        sp = species_of[tag]
-        if sp in seen:
-            continue
-        seen.add(sp)
-        last = max((last_sang.get(t, 0) for t, s2 in species_of.items() if s2 == sp),
-                   default=0)
-        if not last:
-            continue
-        since = frame * 1000 // FPS - last
-        if since >= ROSTER_MEMORY_MS:
-            continue
-        mem = (1.0 - since / ROSTER_MEMORY_MS) ** 2
-        X, Y, persp = project(px, py, pz)
-        if -4 <= X <= BAND_W + 4 and -4 <= Y <= BAND_H + 4:
-            spot(int(X), int(Y), ROSTER_R * persp * (0.7 + 0.6 * mem),
-                 voice_color(tag, ROSTER_ENV_MAX * mem))
 
     for tag, points in trails.items():
         prev = None
@@ -389,13 +469,11 @@ def main():
     for secs in (args.at or [4.0, 9.0, 20.0]):
         frame = int(secs * FPS)
         trails, species_of = simulate(pts, islands, gscale, frame, args.birds)
-        cam, dist, strikes, last_sang = camera(trails, frame)
-        roster = {t: tuple(v * gscale for v in pts[islands[sp]][:3])
-                  for t, sp in species_of.items()}
-        rgb = render(trails, frame, cam, dist, strikes, last_sang, roster, species_of)
+        cam, dist, strikes, yaw, pitch, shots = camera(trails, frame)
+        rgb = render(trails, frame, cam, dist, strikes, yaw, pitch)
         path = "%s-%gs.png" % (args.out, secs)
         png(path, rgb, BAND_W, BAND_H, args.zoom)
-        print("  %s  (%d arms)" % (path, sum(1 for v in trails.values() if v)))
+        print("  %s  (%d in shot, dist %.2f)" % (path, shots, dist))
 
 
 if __name__ == "__main__":

@@ -7,13 +7,12 @@ each, arriving as a Poisson process, with a 25 % chance a conspecific answers. T
 turns over about every four minutes, so the slot is a tour of the corpus rather than a fixed
 dozen. Stepping the dial takes you down to one species at a time.
 
-Both boards put a camera inside the corpus and follow whoever is singing. The birds in the
-roster are a constellation of dim dots, each glowing for a while after it last sang; when
-one starts a song, a cross of dashed rules is struck through it and a thread of stretched
-dots grows out of its dot — fat where the note is loud, pinched where it is quiet, with a
-bead at the note being sung right now. When another bird takes over, the camera pans across
-and dollies in. So the screen says which bird is singing, where it sits among the others,
-and what its song is doing.
+Both boards put a camera inside the corpus, close in, and follow whoever is singing. A song
+draws itself as a thread of stretched dots — fat where the note is loud, pinched where it is
+quiet, with a haloed bead at the note being sung right now — and a cross of very faint
+dashed rules is struck through the singing bird and runs off every edge of the screen. When
+another bird takes over, the camera pans across and dollies in. Nothing static is drawn: the
+screen shows what is happening and goes dark when nothing is.
 
 The sweeping spectrogram is still in the tree behind `LYREBIRD_UI_GALAXY` — every active
 voice plotted at its pitch on a log axis, contours drawing themselves as the notes play —
