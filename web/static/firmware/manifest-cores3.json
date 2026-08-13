@@ -1,0 +1,11 @@
+{
+  "name": "Lyrebird — M5Stack CoreS3",
+  "version": "0b54fe3-dirty",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [{ "path": "lyrebird-cores3.bin", "offset": 0 }]
+    }
+  ]
+}

@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { Installer, isSupported, type DeviceInfo, type FirmwareMeta } from '$lib/installer';
+	import {
+		Installer,
+		isSupported,
+		boardForChip,
+		type BoardMeta,
+		type DeviceInfo,
+		type FirmwareMeta
+	} from '$lib/installer';
 	import {
 		SITE_URL,
 		SITE_TITLE,
@@ -28,8 +35,12 @@
 	let installer = new Installer();
 	let device: DeviceInfo | null = null;
 	let meta: FirmwareMeta | null = null;
+	let board: BoardMeta | null = null;
 
-	$: canInstall = stage === 'ready' && meta !== null;
+	// Set once the board answers: what it actually is, against what is selected.
+	let detected: BoardMeta | null = null;
+	$: mismatch = detected !== null && board !== null && detected.id !== board.id;
+	$: canInstall = stage === 'ready' && board !== null && !mismatch;
 
 	onMount(async () => {
 		supported = isSupported();
@@ -39,6 +50,7 @@
 			// bypass the HTTP cache.
 			const res = await fetch(`${base}/firmware/firmware.json`, { cache: 'no-store' });
 			meta = await res.json();
+			board = meta?.boards?.[0] ?? null;
 		} catch {
 			error = 'The firmware manifest did not load.';
 		}
@@ -62,16 +74,25 @@
 	 * platform-specific — so say which one.
 	 */
 	function hintFor(message: string): string {
-		// Board never entered the ROM loader — auto-reset did not take.
+		// Board never entered the ROM loader — auto-reset did not take. The screen
+		// blanking and coming back several times during this is the reset sequence
+		// working as intended, so say so: it reads like a fault and is not one.
 		if (
-			/Failed to connect|Timed out waiting for packet|invalid head of packet|no sync|Cannot read/i.test(
+			/Failed to connect|Timed out waiting for packet|invalid head of packet|no sync|Cannot read|Wrong boot mode/i.test(
 				message
 			)
 		) {
 			return (
-				'The board did not start its bootloader. Power it off and on, then install ' +
-				'again. A charge-only USB cable or an unpowered hub also causes this — the ' +
-				'Fire needs its own cable in a real port.'
+				'The board reset but started your firmware instead of its bootloader. ' +
+				'(The screen going dark and back a few times during a connect is the reset ' +
+				'sequence, not a fault.) In order, the things that cause this: a charge-only ' +
+				'USB cable; a hub or a low-power port, which browns the Fire out under the ' +
+				'flash write; and a serial monitor still holding the port. The M5Stack Core ' +
+				'has no BOOT button, so it cannot be put into download mode by hand — if the ' +
+				'reset never takes over this cable, use esptool from section 3, which drives ' +
+				'the same lines from the OS with tighter timing. Open the esptool log below: ' +
+				'"Wrong boot mode detected" means the reset is the problem, and "no sync reply" ' +
+				'means the cable or the port is.'
 			);
 		}
 
@@ -99,7 +120,7 @@
 	function addLog(line: string) {
 		// esptool-js emits progress with \r; keep the tail bounded.
 		const clean = line.replace(/\r/g, '').trimEnd();
-		if (clean) log = [...log, clean].slice(-300);
+		if (clean) log = [...log, clean].slice(-600);
 	}
 
 	async function connect(showAll = false) {
@@ -120,6 +141,13 @@
 		stage = 'connecting';
 		try {
 			device = await installer.connect(addLog);
+			// Trust the chip over the dropdown: an ESP32 image on an ESP32-S3
+			// flashes without complaint and then never boots.
+			detected = meta ? boardForChip(device.chip, meta.boards) : null;
+			if (detected) {
+				board = detected;
+				addLog(`--- detected ${detected.name} (${detected.chipFamily})`);
+			}
 			stage = 'ready';
 		} catch (e) {
 			await installer.disconnect();
@@ -129,19 +157,21 @@
 	}
 
 	async function install() {
-		if (!meta) return;
+		if (!board) return;
 		error = '';
 		errorHint = '';
 		stage = 'flashing';
 		progress = 0;
 
 		try {
-			const res = await fetch(`${base}/firmware/${meta.image}?v=${encodeURIComponent(meta.version)}`, {
-				cache: 'no-store'
-			});
+			const version = meta?.version ?? 'dev';
+			const res = await fetch(
+				`${base}/firmware/${board.image}?v=${encodeURIComponent(version)}`,
+				{ cache: 'no-store' }
+			);
 			const image = new Uint8Array(await res.arrayBuffer());
 
-			await installer.flash(meta, image, (f) => (progress = f));
+			await installer.flash(board, image, (f) => (progress = f));
 
 			stage = 'done';
 		} catch (e) {
@@ -154,6 +184,7 @@
 	function startOver() {
 		installer = new Installer();
 		device = null;
+		detected = null;
 		error = '';
 		errorHint = '';
 		log = [];
@@ -163,7 +194,9 @@
 
 	// --- Fallback path, for browsers and machines without working Web Serial ---
 
-	$: manualCommand = meta ? `esptool.py --chip esp32 write_flash 0x0 ${meta.image}` : '';
+	$: manualCommand = board
+		? `esptool.py --chip ${board.chip} write_flash 0x0 ${board.image}`
+		: '';
 
 	let copied = false;
 	async function copyCommand() {
@@ -191,109 +224,143 @@
 	{@html LD_JSON}
 </svelte:head>
 
-<div class="vignette"></div>
-
 <main>
 	<header>
-		<div class="header-line">
-			<h1>LYREBIRD</h1>
-			<span class="badge">M5STACK FIRE</span>
+		<div class="titleline">
+			<h1>Lyrebird</h1>
+			<span class="badge">M5Stack Fire · CoreS3</span>
 		</div>
-		<div class="header-meta">
-			<span class="meta-label">Medium</span><span class="meta-value">Physical birdsong</span>
-			<span class="meta-sep">•</span>
-			<span class="meta-label">Host</span><span class="meta-value">ESP32 · 240 MHz</span>
-			<span class="meta-sep">•</span>
-			<span class="meta-label">Species</span><span class="meta-value">12</span>
-		</div>
-		<p class="tagline">
-			A pocket dawn chorus.<br />
-			No SD card, no samples — every note is a simulated syrinx.
+		<p class="strap">
+			<span>ESP32 / ESP32-S3</span><b>/</b>
+			<span>12 species · 44 syllables</span><b>/</b>
+			<span>22.05 kHz, synthesized on the board</span><b>/</b>
+			<span>no SD card, no samples</span>
+		</p>
+
+		<p class="lede">
+			A pocket dawn chorus. Twelve songbirds, integrated in real time from the Mindlin–Laje
+			model of the avian vocal organ — the same oscillator as
+			<a href={PARENT_PROJECT.url}>{PARENT_PROJECT.name}</a>, ported to the board. No audio is
+			stored: every note is computed from the two parameters real birds control, air-sac
+			pressure and syringeal tension.
 		</p>
 		<p class="lede">
-			Twelve songbird species, synthesized in real time by the Mindlin–Laje model of the
-			avian vocal organ. The device boots straight into a chorus of individual birds, each
-			with its own pitch and timing. Plug a M5Stack Fire in, flash it from this page.
-			Ported from <a href={PARENT_PROJECT.url}>{PARENT_PROJECT.name}</a>.
+			It boots into <b>all birds</b> — all twelve species at once, two individuals of each,
+			arriving as a Poisson process. Step off that with a button and you get one species,
+			alone. Plug a Fire or a CoreS3 in and flash it from this page.
 		</p>
 	</header>
 
 	{#if !supported}
-		<div class="notice notice-warn">
+		<div class="notice warn">
 			<strong>This browser cannot reach USB devices.</strong>
-			Web Serial is required. Recent Chrome, Edge, Opera and Firefox have it. Safari and
-			mobile browsers do not. Use the manual route below. It writes the same image on any
-			machine.
+			<p>
+				Web Serial is required. Recent Chrome, Edge and Opera have it; Safari and mobile
+				browsers do not. Use the manual route below — it writes the same image on any machine.
+			</p>
 		</div>
 	{:else}
-		<section class="step" class:muted={stage !== 'idle' && stage !== 'connecting'}>
-			<h2><span class="idx">01</span> Connect</h2>
-
-			{#if device}
-				<div class="readout">
-					<div><dt>Chip</dt><dd>{device.chip}</dd></div>
-					<div><dt>MAC</dt><dd>{device.mac}</dd></div>
-					<div><dt>USB</dt><dd>{device.port}</dd></div>
-				</div>
-			{:else}
-				<p class="body">
-					Data USB cable, not charge-only. The picker lists CP210x, CH340 and FT232
-					bridges only — the Fire's CP2104 is in the first group.
-				</p>
-				<div class="actions">
-					<button class="cta" on:click={() => connect()} disabled={stage === 'connecting'}>
-						{stage === 'connecting' ? 'Connecting…' : 'Connect device'}
+		<section class="step">
+			<h2><span class="num">00</span> Board</h2>
+			<p>
+				The Fire is an ESP32 and the CoreS3 an ESP32-S3 — different processors, so there is
+				an image for each and no one binary that runs on both. Connecting reads the chip off
+				the board and picks for you; this only matters before that, and for the manual route.
+			</p>
+			<div class="actions">
+				{#each meta?.boards ?? [] as b (b.id)}
+					<button class:on={board?.id === b.id} on:click={() => (board = b)}>
+						{b.name}
 					</button>
-					<button class="ghost" on:click={() => connect(true)} disabled={stage === 'connecting'}>
-						Show all ports
-					</button>
+				{/each}
+			</div>
+			{#if mismatch && detected}
+				<div class="notice warn">
+					<strong>That is not the board you have.</strong>
+					<p>
+						The chip answered as {detected.chipFamily}, so this is a {detected.name}. Writing
+						the other image would flash without complaint and then never boot, so Install
+						stays disabled until the selection matches.
+					</p>
 				</div>
 			{/if}
 		</section>
 
+		<section class="step" class:muted={stage !== 'idle' && stage !== 'connecting'}>
+			<h2><span class="num">01</span> Connect</h2>
+
+			{#if device}
+				<dl class="deflist">
+					<div><dt>Chip</dt><dd class="mono">{device.chip}</dd></div>
+					<div><dt>MAC</dt><dd class="mono">{device.mac}</dd></div>
+					<div><dt>USB</dt><dd class="mono">{device.port}</dd></div>
+					<div><dt>Board</dt><dd>{detected?.name ?? 'not recognised'}</dd></div>
+				</dl>
+			{:else}
+				<p>
+					A data USB cable, not a charge-only one. The picker is filtered to USB-UART
+					bridges and Espressif devices — the Fire's CP2104 is in the first group, and the
+					CoreS3 appears as an Espressif device because it programs over the ESP32-S3's own
+					USB rather than a bridge.
+				</p>
+				<div class="actions">
+					<button class="primary" on:click={() => connect()} disabled={stage === 'connecting'}>
+						{stage === 'connecting' ? 'Connecting…' : 'Connect device'}
+					</button>
+					<button on:click={() => connect(true)} disabled={stage === 'connecting'}>
+						Show all ports
+					</button>
+				</div>
+				<p class="note">
+					The screen goes dark and comes back several times while this runs. That is the reset
+					sequence putting the board into its bootloader, not a fault — it can take half a
+					minute. On the Fire the reset has to happen over the cable, because the Core has no
+					BOOT button; the CoreS3 resets itself over its native USB instead.
+				</p>
+			{/if}
+		</section>
+
 		<section class="step" class:muted={!device}>
-			<h2><span class="idx">02</span> Install</h2>
+			<h2><span class="num">02</span> Install</h2>
 
 			{#if stage === 'flashing'}
-				<div class="progress">
-					<div class="bar"><span style="width: {Math.round(progress * 100)}%"></span></div>
-					<p class="progress-label">Writing firmware — {Math.round(progress * 100)}%</p>
-				</div>
+				<div class="bar"><span style="width: {Math.round(progress * 100)}%"></span></div>
+				<p class="note mono">writing firmware — {Math.round(progress * 100)} %</p>
 			{:else if stage === 'done'}
-				<div class="notice notice-ok">
+				<div class="notice ok">
 					<strong>Installed.</strong>
-					The board restarts on its own and boots into the chorus. If the screen stays
-					dark, press the red power button once.
+					<p>
+						The board restarts on its own and boots into the all-birds chorus. If the screen
+						stays dark, press the red power button once.
+					</p>
 				</div>
-				<div class="actions">
-					<button class="ghost" on:click={startOver}>Flash another board</button>
-				</div>
+				<div class="actions"><button on:click={startOver}>Flash another board</button></div>
 			{:else}
 				<div class="actions">
-					<button class="cta" on:click={install} disabled={!canInstall}>Install Lyrebird</button>
+					<button class="primary" on:click={install} disabled={!canInstall}>
+						Install Lyrebird
+					</button>
 				</div>
-				<p class="hint">
-					Writes bootloader, partition table and firmware in one image. About a minute.
-					{#if meta}<span class="version">build {meta.version}</span>{/if}
+				<p class="note">
+					Writes bootloader, partition table and firmware as one image. About a minute.
+					{#if meta}<span class="mono">build {meta.version}</span>{/if}
 				</p>
 			{/if}
 
 			{#if error}
-				<div class="notice notice-warn">
+				<div class="notice warn">
 					<strong>The install did not finish.</strong>
-					<p class="err-message">{error}</p>
-					{#if errorHint}
-						<p class="err-hint">{errorHint}</p>
-					{/if}
+					<p class="mono errline">{error}</p>
+					{#if errorHint}<p class="errhint">{errorHint}</p>{/if}
 					{#if log.length}
-						<details class="logbox">
-							<summary>esptool log ({log.length} lines)</summary>
+						<details>
+							<summary>esptool log — {log.length} lines</summary>
 							<pre>{log.join('\n')}</pre>
 						</details>
 					{/if}
 					<div class="actions">
-						<button class="cta" on:click={() => connect()}>Try again</button>
-						<button class="ghost" on:click={startOver}>Start over</button>
+						<button class="primary" on:click={() => connect()}>Try again</button>
+						<button on:click={startOver}>Start over</button>
 					</div>
 				</div>
 			{/if}
@@ -301,432 +368,378 @@
 	{/if}
 
 	<section class="step" id="manual">
-		<h2><span class="idx">03</span> Without Web Serial</h2>
-		<p class="body">
-			Safari, mobile, or any browser where the picker stays empty. Same image. Needs
+		<h2><span class="num">03</span> Without Web Serial</h2>
+		<p>
+			Safari, mobile, or any browser where the picker stays empty. The same image, written by
 			<a href="https://docs.espressif.com/projects/esptool/en/latest/esp32/">esptool</a>
 			(<code>pip install esptool</code>).
 		</p>
 
-		<div class="manual">
-			<div class="actions">
-				<a class="button-like" href="{base}/firmware/{meta?.image ?? 'lyrebird.bin'}" download>
-					Download firmware
-				</a>
-			</div>
-
-			<pre class="command"><code>{manualCommand}</code></pre>
-
-			<div class="actions">
-				<button class="ghost" on:click={copyCommand} disabled={!manualCommand}>
-					{copied ? 'Copied' : 'Copy command'}
-				</button>
-			</div>
-
-			<p class="hint">
-				The file in the working directory. Add <code>--port /dev/ttyUSB0</code> (or
-				<code>COM3</code>) if esptool picks the wrong one.
-			</p>
-
-			<p class="hint">
-				If esptool reports a permission error on Linux, run
-				<code>sudo usermod -aG dialout $USER</code>. Then log out and log in again.
-			</p>
+		<div class="actions">
+			<a
+				class="button-like"
+				href="{base}/firmware/{board?.image ?? 'lyrebird-fire.bin'}"
+				download
+			>
+				Download {board?.name ?? 'firmware'}
+			</a>
+			<button on:click={copyCommand} disabled={!manualCommand}>
+				{copied ? 'Copied' : 'Copy command'}
+			</button>
 		</div>
+
+		<pre class="command"><code>{manualCommand}</code></pre>
+
+		<p class="note">
+			Run it beside the downloaded file. Add <code>--port /dev/ttyUSB0</code> (or
+			<code>COM3</code>) if esptool picks the wrong one. On a permission error, run
+			<code>sudo usermod -aG dialout $USER</code>, then log out and log in again.
+		</p>
 	</section>
 
 	<section class="step">
-		<h2><span class="idx">04</span> Controls</h2>
-		<p class="body">
-			Three buttons on the Fire's face. Short press changes what you hear; a hold works
-			the volume.
+		<h2><span class="num">04</span> Controls</h2>
+		<p>
+			Three buttons under the screen. A and C step one dial of thirteen positions; B changes
+			how the current position sings. A hold does something else than a press.
 		</p>
-		<div class="readout">
-			<div><dt>A short</dt><dd>previous species</dd></div>
-			<div><dt>C short</dt><dd>next species</dd></div>
-			<div><dt>B short</dt><dd>chorus ↔ solo</dd></div>
-			<div><dt>A / C hold</dt><dd>volume down / up</dd></div>
-			<div><dt>B hold</dt><dd>pause / resume</dd></div>
-		</div>
+		<p class="note">
+			The CoreS3 has no physical buttons — the same three live on the touch strip in the
+			bezel below the screen, left to right.
+		</p>
+
+		<dl class="deflist">
+			<div>
+				<dt>A · C short</dt>
+				<dd>
+					Previous / next position on the dial. Position 1 is <b>all birds</b> — all twelve
+					species at once. Positions 2–13 are one species each, and it wraps.
+				</dd>
+			</div>
+			<div>
+				<dt>B short</dt>
+				<dd>
+					Chorus ↔ solo, on a single-species position: four individuals answering each other,
+					or one bird singing its songs back to back. All birds is a chorus by definition, so
+					B does nothing there.
+				</dd>
+			</div>
+			<div><dt>A · C hold</dt><dd>Volume down / up, in 2 % steps.</dd></div>
+			<div><dt>B hold</dt><dd>Pause and resume. Paused, the DAC goes high-Z — no idle hiss.</dd></div>
+		</dl>
+
+		<p class="note">
+			The screen sweeps a spectrogram of what you are hearing: each sounding voice is plotted
+			at its pitch on a log axis from 250 Hz to 10 kHz, coloured by which individual is
+			singing. Syllable contours draw themselves as the notes sound.
+		</p>
 	</section>
 
 	<footer>
-		<div class="footer-links">
-			<a href={REPO_URL}>Source &amp; manual flashing</a>
+		<div class="links">
+			<a href={REPO_URL}>Source</a>
 			<a href={PARENT_PROJECT.url}>{PARENT_PROJECT.name}</a>
 			<a href={ARTIST.url}>{ARTIST.name}</a>
 		</div>
-		<p class="colophon">variable.gallery</p>
+		<p class="note mono">variable.gallery</p>
 	</footer>
 </main>
 
 <style>
-	.vignette {
-		position: fixed;
-		inset: 0;
-		z-index: 1;
-		pointer-events: none;
-		background: radial-gradient(
-			ellipse at 50% 30%,
-			rgba(3, 5, 8, 0.1) 0%,
-			rgba(3, 5, 8, 0.55) 55%,
-			rgba(3, 5, 8, 0.88) 100%
-		);
+	/**
+	 * The page's own arrangement. Everything reusable — tokens, controls, type — is in
+	 * app.css, matching the parent project's split.
+	 *
+	 * The rule of the ground: hairlines, not boxes. No panel here has a background, a
+	 * shadow or a blur; a section is separated from the next by a 1 px rule, and the only
+	 * saturated colour is `--signal` on the one live thing per state.
+	 */
+	main {
+		max-width: 46rem;
+		margin: 0 auto;
+		padding: clamp(2.5rem, 7vw, 5rem) 1.5rem 4rem;
 	}
 
-	main {
-		position: relative;
-		z-index: 2;
-		max-width: 52rem;
-		margin: 0 auto;
-		padding: clamp(3rem, 8vw, 7rem) var(--space-lg) var(--space-xl);
-	}
+	/* ------------------------------------------------------------------ header -- */
 
 	header {
-		margin-bottom: clamp(3rem, 7vw, 5rem);
+		padding-bottom: 1.6rem;
+		margin-bottom: 2.4rem;
+		border-bottom: 1px solid var(--ink);
 	}
 
-	.header-line {
+	.titleline {
 		display: flex;
-		align-items: center;
-		gap: var(--space-md);
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0.8rem;
 	}
 
 	h1 {
-		margin: 0;
-		font-size: clamp(1.6rem, 4.5vw, 2.6rem);
-		font-weight: 400;
-		letter-spacing: 0.02em;
-		line-height: 1.05;
+		font-size: clamp(1.5rem, 4vw, 2.1rem);
+		letter-spacing: 0.01em;
 	}
 
 	.badge {
-		padding: 0.1rem 0.4rem;
-		border: 1px solid var(--lab-accent);
-		border-radius: 3px;
+		padding: 0.05rem 0.4rem;
+		border: 1px solid var(--rule-strong);
+		border-radius: var(--radius);
 		font-family: var(--font-mono);
-		font-size: 0.6rem;
-		letter-spacing: 0.1em;
-		color: var(--lab-accent);
+		font-size: 0.62rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--ink-dim);
 	}
 
-	.header-meta {
+	/* The figures line. Monospace because each item is a measurement. */
+	.strap {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.4rem;
-		margin-top: var(--space-md);
+		gap: 0.1rem 0.5rem;
+		margin: 0.7rem 0 1.4rem;
 		font-family: var(--font-mono);
-		font-size: 0.65rem;
-		letter-spacing: 0.06em;
+		font-size: 0.66rem;
+		letter-spacing: 0.04em;
+		color: var(--ink-faint);
 	}
 
-	.meta-label {
-		color: var(--lab-text-tertiary);
-		text-transform: uppercase;
-	}
-
-	.meta-value {
-		color: var(--lab-text-secondary);
-	}
-
-	.meta-sep {
-		color: var(--lab-text-tertiary);
-		padding: 0 0.3rem;
-	}
-
-	.tagline {
-		margin: var(--space-xl) 0 var(--space-lg);
-		font-size: clamp(1.05rem, 2.4vw, 1.5rem);
-		font-weight: 300;
-		line-height: 1.4;
-		letter-spacing: -0.01em;
+	.strap b {
+		font-weight: 400;
+		color: var(--rule-strong);
 	}
 
 	.lede {
-		max-width: 52ch;
-		margin: 0;
-		font-size: 0.85rem;
-		font-weight: 300;
-		color: var(--lab-text-secondary);
+		max-width: 40rem;
+		margin: 0 0 0.8rem;
+		color: var(--ink-dim);
 	}
+
+	.lede b {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	/* ------------------------------------------------------------------- steps -- */
 
 	.step {
-		margin-bottom: clamp(2.5rem, 6vw, 4rem);
-		transition: opacity var(--transition-slow);
+		padding-bottom: 2.2rem;
+		transition: opacity 220ms ease;
 	}
 
+	/* A step that is not this step's turn. Not hidden — the reader should still be able
+	   to read ahead and see what is coming. */
 	.step.muted {
-		opacity: 0.35;
+		opacity: 0.4;
 	}
 
 	h2 {
 		display: flex;
 		align-items: baseline;
-		gap: var(--space-md);
-		margin: 0 0 var(--space-lg);
+		gap: 0.7rem;
+		margin: 0 0 0.9rem;
+		padding-bottom: 0.45rem;
+		border-bottom: 1px solid var(--rule);
 		font-size: 0.95rem;
-		font-weight: 500;
 		letter-spacing: 0.02em;
 	}
 
-	.idx {
+	.num {
+		flex: none;
 		font-family: var(--font-mono);
 		font-size: 0.7rem;
-		color: var(--lab-text-tertiary);
+		color: var(--ink-faint);
 	}
 
-	.body {
-		max-width: 58ch;
-		margin: 0 0 var(--space-lg);
-		font-size: 0.85rem;
-		font-weight: 300;
-		color: var(--lab-text-secondary);
+	.step p {
+		max-width: 40rem;
+		margin: 0 0 0.9rem;
+		color: var(--ink-dim);
+	}
+
+	.note {
+		font-size: 0.78rem;
+		color: var(--ink-faint);
 	}
 
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-sm);
+		gap: 0.5rem;
 		align-items: center;
+		margin-bottom: 0.9rem;
 	}
 
-	.cta {
-		padding: 0.7rem 1.6rem;
-		font-size: 0.85rem;
-		border-color: var(--lab-accent);
-		background: var(--lab-accent-dim);
+	/* --------------------------------------------------------------- deflists -- */
+
+	/* A term and what it is, ruled rather than boxed — the parent's `.deflist`. */
+	.deflist {
+		margin: 0 0 1rem;
+		max-width: 40rem;
 	}
 
-	.cta:hover:not(:disabled) {
-		background: var(--lab-accent);
-		border-color: var(--lab-accent);
-		color: var(--lab-bg);
-	}
-
-	.cta:disabled,
-	.ghost:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-
-	.ghost {
-		background: transparent;
-		font-size: 0.78rem;
-		color: var(--lab-text-secondary);
-	}
-
-	.readout {
+	.deflist > div {
 		display: grid;
-		gap: 0.35rem;
-		padding: var(--space-lg);
-		border: 1px solid var(--lab-border);
-		border-radius: 10px;
-		background: var(--lab-glass);
-		backdrop-filter: blur(14px);
+		grid-template-columns: 7.5rem minmax(0, 1fr);
+		gap: 0.2rem 1rem;
+		padding: 0.55rem 0;
+		border-top: 1px solid var(--rule);
 	}
 
-	.readout div {
-		display: flex;
-		justify-content: space-between;
-		gap: var(--space-lg);
-		font-size: 0.75rem;
+	.deflist > div:last-child {
+		border-bottom: 1px solid var(--rule);
 	}
 
-	.readout dt {
-		color: var(--lab-text-tertiary);
+	@media (max-width: 34rem) {
+		.deflist > div {
+			grid-template-columns: 1fr;
+		}
 	}
 
-	.readout dd {
-		margin: 0;
+	.deflist dt {
 		font-family: var(--font-mono);
-		color: var(--lab-text-primary);
-		text-align: right;
-		word-break: break-all;
+		font-size: 0.72rem;
+		color: var(--ink);
 	}
 
-	.progress {
-		padding: var(--space-lg);
-		border: 1px solid var(--lab-border);
-		border-radius: 10px;
-		background: var(--lab-glass);
-		backdrop-filter: blur(14px);
+	.deflist dd {
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.6;
+		color: var(--ink-dim);
+		overflow-wrap: anywhere;
 	}
 
+	.deflist dd b {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	/* -------------------------------------------------------------- progress -- */
+
+	/* 3 px, because the bar is a readout and not a feature. */
 	.bar {
 		height: 3px;
+		background: var(--rule);
 		border-radius: 2px;
-		background: var(--lab-surface);
 		overflow: hidden;
 	}
 
 	.bar span {
 		display: block;
 		height: 100%;
-		background: var(--lab-accent);
-		transition: width var(--transition-normal);
+		background: var(--signal);
+		transition: width 200ms ease;
 	}
 
-	.progress-label {
-		margin: var(--space-md) 0 0;
-		font-family: var(--font-mono);
-		font-size: 0.72rem;
-		color: var(--lab-text-secondary);
-	}
+	/* --------------------------------------------------------------- notices -- */
 
+	/* The one place a colour other than graphite appears on a block: a 2 px edge, so a
+	   failed write is findable by scanning the left margin. */
 	.notice {
-		padding: var(--space-lg);
-		border-radius: 10px;
-		font-size: 0.82rem;
-		font-weight: 300;
-		line-height: 1.7;
-		color: var(--lab-text-secondary);
-		border: 1px solid var(--lab-border);
-		background: var(--lab-glass);
-		backdrop-filter: blur(14px);
+		margin: 0 0 1rem;
+		padding: 0.7rem 0 0.7rem 0.9rem;
+		border-left: 2px solid var(--rule-strong);
 	}
 
-	.notice + .actions,
-	.notice .actions {
-		margin-top: var(--space-md);
+	.notice.warn {
+		border-left-color: var(--warn);
 	}
 
-	.notice-warn {
-		border-color: rgba(245, 101, 101, 0.3);
-	}
-
-	.notice-ok {
-		border-color: var(--lab-accent);
+	.notice.ok {
+		border-left-color: var(--ok);
 	}
 
 	.notice strong {
 		display: block;
-		color: var(--lab-text-primary);
-		font-weight: 500;
+		font-weight: 600;
+		color: var(--ink);
 	}
 
-	.logbox {
-		margin-top: var(--space-md);
+	.notice p {
+		margin: 0.25rem 0 0;
+		font-size: 0.84rem;
 	}
 
-	.logbox summary {
-		font-size: 0.72rem;
-		color: var(--lab-text-tertiary);
-		cursor: pointer;
-		padding: var(--space-sm) 0;
+	.notice .actions {
+		margin: 0.8rem 0 0;
 	}
 
-	.logbox summary:hover {
-		color: var(--lab-accent);
-	}
-
-	.logbox pre {
-		max-height: 14rem;
-		margin: var(--space-sm) 0 0;
-		padding: var(--space-md);
-		overflow: auto;
-		border: 1px solid var(--lab-border);
-		border-radius: 6px;
-		background: var(--lab-bg);
-		font-family: var(--font-mono);
-		font-size: 0.68rem;
-		line-height: 1.6;
-		color: var(--lab-text-secondary);
+	.errline {
+		color: var(--warn);
 		user-select: text;
 	}
 
-	.manual {
-		padding: var(--space-lg);
-		border: 1px solid var(--lab-border);
-		border-radius: 10px;
-		background: var(--lab-glass);
-		backdrop-filter: blur(14px);
+	.errhint {
+		margin-top: 0.6rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid var(--rule);
+		user-select: text;
+	}
+
+	/* ------------------------------------------------------------------- logs -- */
+
+	summary {
+		margin: 0.7rem 0 0;
+		font-size: 0.74rem;
+		color: var(--ink-faint);
+		cursor: pointer;
+	}
+
+	summary:hover {
+		color: var(--signal);
+	}
+
+	pre {
+		max-height: 14rem;
+		margin: 0.5rem 0 0;
+		padding: 0.7rem 0.8rem;
+		overflow: auto;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-raised);
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		line-height: 1.65;
+		color: var(--ink-dim);
+		user-select: text;
 	}
 
 	.command {
-		margin: var(--space-lg) 0 0;
-		padding: var(--space-md);
-		border: 1px solid var(--lab-border);
-		border-radius: 6px;
-		background: var(--lab-bg);
-		overflow-x: auto;
+		max-height: none;
+		color: var(--ink);
+		white-space: pre;
 	}
 
 	.command code {
 		padding: 0;
+		border: 0;
 		background: none;
-		font-size: 0.72rem;
-		line-height: 1.7;
-		color: var(--lab-text-primary);
-		white-space: pre;
-		user-select: text;
+		font-size: inherit;
 	}
 
-	.manual .actions + .command,
-	.manual .command + .actions {
-		margin-top: var(--space-md);
-	}
-
-	.manual .hint code {
-		user-select: text;
-	}
-
-	.err-message {
-		margin: var(--space-sm) 0 0;
-		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		color: var(--lab-danger);
-		user-select: text;
-	}
-
-	.err-hint {
-		margin: var(--space-md) 0 0;
-		padding-top: var(--space-md);
-		border-top: 1px solid var(--lab-border);
-		user-select: text;
-	}
-
-	.hint {
-		margin: var(--space-md) 0 0;
-		font-size: 0.75rem;
-		color: var(--lab-text-tertiary);
-	}
-
-	.version {
-		font-family: var(--font-mono);
-		margin-left: var(--space-sm);
-	}
+	/* ----------------------------------------------------------------- footer -- */
 
 	footer {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-md) var(--space-lg);
-		align-items: center;
+		gap: 0.6rem 1.5rem;
+		align-items: baseline;
 		justify-content: space-between;
-		margin-top: clamp(3rem, 8vw, 5rem);
-		padding-top: var(--space-lg);
-		border-top: 1px solid var(--lab-border);
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--ink);
 	}
 
-	.footer-links {
+	.links {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-lg);
-		font-size: 0.75rem;
+		gap: 1.2rem;
+		font-size: 0.8rem;
 	}
 
-	.footer-links a {
-		color: var(--lab-text-secondary);
-	}
-
-	.footer-links a:hover {
-		color: var(--lab-accent);
-	}
-
-	.colophon {
+	footer p {
 		margin: 0;
-		font-family: var(--font-mono);
-		font-size: 0.68rem;
-		color: var(--lab-text-tertiary);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
 	}
 </style>

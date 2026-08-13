@@ -1,4 +1,8 @@
-import type { ESPLoader, Transport } from 'esptool-js';
+import type { ClassicReset, ESPLoader, Transport } from 'esptool-js';
+
+// What `LoaderOptions.resetConstructors.classicReset` is declared to return. See
+// the note at the call site: the runtime only ever calls `.reset()` on it.
+type ClassicResetLike = ClassicReset;
 
 /**
  * Drives the whole connect -> flash cycle over Web Serial.
@@ -17,16 +21,52 @@ const USB_FILTERS = [
 	{ usbVendorId: 0x1a86, usbProductId: 0x7523 }, // WCH CH340
 	{ usbVendorId: 0x1a86, usbProductId: 0x55d3 }, // WCH CH343
 	{ usbVendorId: 0x1a86, usbProductId: 0x55d4 }, // WCH CH9102
-	{ usbVendorId: 0x0403, usbProductId: 0x6001 } // FTDI FT232R
+	{ usbVendorId: 0x0403, usbProductId: 0x6001 }, // FTDI FT232R
+	// Espressif, vendor-wide: the CoreS3 programs over the ESP32-S3's own USB
+	// rather than a bridge chip, so it appears as an Espressif CDC/JTAG device.
+	// esptool-js detects PID 0x1001 and switches to its USB-JTAG reset by itself.
+	{ usbVendorId: 0x303a }
 ];
 
-// Tried in order. Sync is always 115200; these are the post-sync rates. The
-// last entry means "do not change baud at all", which is the most compatible.
-const CONNECT_BAUD_RATES = [460800, 115200];
+// Sync always happens at 115200 (esptool-js `romBaudrate`); these are the rates
+// the loader switches to *after* sync. Some bridges are unreliable above ~460800.
+const FAST_BAUD = 460800;
+const SLOW_BAUD = 115200;
 
-// esptool-js retries its sync internally and can sit for minutes without
-// resolving, which is indistinguishable from a hang. Bound each attempt.
-const ATTEMPT_TIMEOUT_MS = 20000;
+/**
+ * Bounds one whole esptool connect, not one reset.
+ *
+ * It has to sit above esptool-js's own budget, and that budget is larger than it
+ * looks: `ESPLoader.connect()` makes 7 attempts, each a reset sequence followed
+ * by 5 sync tries. Below that ceiling we abort the loader mid-sequence and start
+ * it again, which resets the board another seven times without ever letting it
+ * finish — the board appears to restart forever and the reported error is
+ * whatever our timeout says rather than what esptool found.
+ */
+const CONNECT_TIMEOUT_MS = 60000;
+
+/**
+ * Reset sequences for `CustomReset`: D = DTR (1 pulls IO0 low), R = RTS (1 pulls
+ * EN low), W = wait in ms.
+ *
+ * esptool-js's built-in ClassicReset is `D0|R1|W100|D1|R0|W50|D0`, and on an
+ * M5Stack Core that is marginal in two places. EN carries a debounce capacitor
+ * for the side reset button, so 100 ms is not always long enough for the line to
+ * reach a logic low — the chip never really enters reset. And releasing EN in the
+ * statement straight after pulling IO0 low leaves no settling time, so the chip
+ * can latch IO0 before it has actually gone low and boot the application instead
+ * of the ROM loader. Over Web Serial each signal change is a separate async
+ * round trip to the browser's serial stack, which widens both windows further.
+ *
+ * So: hold EN low longer, then insert an explicit wait between IO0 going low and
+ * EN being released. esptool.py papers over the same board with its
+ * `ESPTOOL_RESET_DELAY` escape hatch.
+ *
+ * Two lengths, because esptool alternates the strategies it is given across its
+ * seven attempts — a board that needs the slow one still gets it.
+ */
+const RESET_SEQUENCE_SHORT = 'D0|R1|W200|D1|W40|R0|W450|D0';
+const RESET_SEQUENCE_LONG = 'D0|R1|W500|D1|W80|R0|W900|D0';
 
 function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
 	let timer: ReturnType<typeof setTimeout>;
@@ -36,10 +76,35 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
 	return Promise.race([work, expiry]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
 
-export interface FirmwareMeta {
-	version: string;
+/** One flashable board. The Fire and the CoreS3 are different architectures, so
+ * there is an image per board and no single binary that runs on both. */
+export interface BoardMeta {
+	id: string;
+	name: string;
+	chip: string; // esptool --chip argument
+	chipFamily: string; // as esptool reports it: "ESP32", "ESP32-S3"
 	image: string;
 	imageOffset: number;
+}
+
+export interface FirmwareMeta {
+	version: string;
+	boards: BoardMeta[];
+}
+
+/**
+ * Which board an esptool chip description belongs to.
+ *
+ * `device.chip` is a human string like "ESP32-D0WD-V3 (revision v3.1)" or
+ * "ESP32-S3 (QFN56) (revision v0.2)", so this matches on the family rather than
+ * parsing it. Writing an ESP32 image to an S3 is not fatal but it produces a
+ * board that flashes happily and then never boots, which is a bad afternoon.
+ */
+export function boardForChip(chip: string, boards: BoardMeta[]): BoardMeta | null {
+	const upper = chip.toUpperCase();
+	// longest family name first, so "ESP32-S3" is not matched by "ESP32"
+	const byLength = [...boards].sort((a, b) => b.chipFamily.length - a.chipFamily.length);
+	return byLength.find((b) => upper.includes(b.chipFamily.toUpperCase())) ?? null;
 }
 
 export interface DeviceInfo {
@@ -74,29 +139,37 @@ export class Installer {
 	/**
 	 * Enter the ROM bootloader and identify the chip.
 	 *
-	 * Sync always happens at 115200; the baud rate here is what the loader
-	 * switches to afterwards. Some bridges are unreliable above ~460800, so a
-	 * failure is retried at plain 115200 before giving up.
+	 * The board visibly resets several times while this runs — that is the reset
+	 * sequence, not a fault.
+	 *
+	 * There is deliberately only one connect here. The previous version ran the
+	 * whole thing twice, once per baud rate, which cannot help and does harm:
+	 * sync happens at `romBaudrate` (115200) whatever `baudrate` is set to, so a
+	 * board that will not sync at one rate will not sync at the other, and the
+	 * second run just resets it another seven times. The fallback below only
+	 * fires when the board *did* answer and the fast rate was what failed.
 	 */
 	async connect(onLog: (line: string) => void): Promise<DeviceInfo> {
 		if (!this.port) throw new Error('No port selected');
 
-		let lastError: unknown = null;
-		for (const baudrate of CONNECT_BAUD_RATES) {
-			try {
-				onLog(`--- connecting at ${baudrate} baud`);
-				return await withTimeout(
-					this.attemptConnect(baudrate, onLog),
-					ATTEMPT_TIMEOUT_MS,
-					`Connect at ${baudrate}`
-				);
-			} catch (e) {
-				lastError = e;
-				onLog(`--- failed at ${baudrate}: ${e instanceof Error ? e.message : String(e)}`);
-				await this.teardown();
+		try {
+			onLog(`--- connecting (sync at ${SLOW_BAUD}, then ${FAST_BAUD})`);
+			return await withTimeout(this.attemptConnect(FAST_BAUD, onLog), CONNECT_TIMEOUT_MS, 'Connect');
+		} catch (e) {
+			// `chip` is only set once sync succeeded and the magic value was read.
+			const answered = this.loader?.chip != null;
+			onLog(`--- failed: ${e instanceof Error ? e.message : String(e)}`);
+			await this.teardown();
+
+			if (!answered) {
+				// The board never reached the ROM loader. Resetting it again will
+				// not change that, so stop rather than thrash it.
+				throw e instanceof Error ? e : new Error(String(e));
 			}
+
+			onLog(`--- the board answered but ${FAST_BAUD} did not hold; retrying at ${SLOW_BAUD}`);
+			return await withTimeout(this.attemptConnect(SLOW_BAUD, onLog), CONNECT_TIMEOUT_MS, 'Connect');
 		}
-		throw lastError instanceof Error ? lastError : new Error(String(lastError));
 	}
 
 	private async attemptConnect(
@@ -106,12 +179,31 @@ export class Installer {
 		// Loaded on demand: esptool-js ships extensionless ESM imports that
 		// Node cannot resolve during prerendering, and it is only ever needed
 		// in the browser once the user has actually picked a device.
-		const { ESPLoader, Transport } = await import('esptool-js');
+		const { ESPLoader, Transport, CustomReset } = await import('esptool-js');
 
 		this.transport = new Transport(this.port!, false);
 		this.loader = new ESPLoader({
 			transport: this.transport,
 			baudrate,
+			// The reason a connect failed is otherwise thrown away: `connect()`
+			// raises a flat "Failed to connect with the device" no matter what,
+			// while the useful finding — "Wrong boot mode detected (0x13)" versus
+			// "Download mode detected, but getting no sync reply" — goes only to
+			// `debug()`. With this on it lands in the log the page already shows,
+			// which is the difference between diagnosing this and guessing at it.
+			debugLogging: true,
+			resetConstructors: {
+				// esptool hands this its own delay (50 ms, then 550 ms) and expects
+				// a ClassicReset back. We substitute the two sequences above, which
+				// is why the cast is here: upstream types the factory by the class
+				// it happens to return rather than by the ResetStrategy interface
+				// it actually uses, and CustomReset implements that interface.
+				classicReset: (transport, resetDelay) =>
+					new CustomReset(
+						transport,
+						resetDelay > 100 ? RESET_SEQUENCE_LONG : RESET_SEQUENCE_SHORT
+					) as unknown as ClassicResetLike
+			},
 			terminal: {
 				clean() {},
 				writeLine: onLog,
@@ -133,14 +225,14 @@ export class Installer {
 	 * @param onProgress fraction 0..1
 	 */
 	async flash(
-		meta: FirmwareMeta,
+		board: BoardMeta,
 		image: Uint8Array,
 		onProgress: (fraction: number) => void
 	): Promise<void> {
 		if (!this.loader) throw new Error('Not connected');
 
 		await this.loader.writeFlash({
-			fileArray: [{ data: image, address: meta.imageOffset }],
+			fileArray: [{ data: image, address: board.imageOffset }],
 			flashMode: 'keep',
 			flashFreq: 'keep',
 			flashSize: 'keep',

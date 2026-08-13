@@ -1,162 +1,149 @@
 // Lyrebird on the M5Stack Fire — bird-chorus synth, no SD card.
 //
-// Boots straight into chorus mode: a Poisson chorus of individual birds of
-// the selected species, synthesized on-device by the Mindlin-Laje syrinx
-// model (port of the Lyrebird web app's engine; see src/syrinx.cpp).
+// Boots into ALL BIRDS: every one of the 12 species at once, two individuals
+// each, synthesized on-device by the Mindlin-Laje syrinx model (port of the
+// Lyrebird web app's engine; see src/syrinx.cpp). A/C step off that slot into
+// one species at a time.
 //
 // Buttons:
-//   A short = previous species   A hold = volume down
-//   B short = chorus <-> solo    B hold = pause/resume
-//   C short = next species       C hold = volume up
+//   A short = previous bird     A hold = volume down
+//   B short = chorus <-> solo   B hold = pause/resume
+//   C short = next bird         C hold = volume up
 #include <Arduino.h>
-#include <M5Stack.h>
+#include <M5Unified.h>
 
 #include "audio.h"
 #include "bird_data.h"
 #include "chorus.h"
 #include "syrinx.h"
+#include "ui.h"
 
-static bool needsRedraw = true;
+/**
+ * Backlight brightness, and why it is pinned at maximum.
+ *
+ * The backlight is dimmed by PWM on a pin a couple of centimetres from GPIO25,
+ * which on the Fire is a high-impedance analog DAC output feeding a speaker
+ * amplifier — a switching load of some tens of milliamps right next to the one
+ * analog line on the board. At full brightness the duty cycle saturates and the
+ * pin sits constantly high, so there is no switching at all.
+ *
+ * Lower this if the speaker is quiet and you would rather have a dimmer screen.
+ * It is also the experiment worth running first if the Fire still hisses with
+ * nothing sounding: the difference between 255 and, say, 120 is the answer to
+ * "is that noise the backlight or the DAC".
+ *
+ * The CoreS3 does not care — its audio never touches an analog pin.
+ */
+#define BACKLIGHT 255
+
+#define VOL_HOLD_MS 300     // press longer than this and A/C mean volume
+#define VOL_STEP_MS 120
+#define VOL_STEP 0.02f
+#define PAUSE_HOLD_MS 1000
+#define FRAME_MS 40         // 25 fps sweep
+
 static bool volHoldA = false;
 static bool volHoldC = false;
 static bool bHoldHandled = false;
 static uint32_t lastVolStepMs = 0;
 
-static void render() {
-    M5.Lcd.fillScreen(TFT_BLACK);
-    M5.Lcd.setRotation(1);
-
-    const SpeciesData& sp = SPECIES[chorusSpecies()];
-
-    M5.Lcd.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(8, 8);
-    M5.Lcd.print("LYREBIRD");
-
-    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(8, 44);
-    M5.Lcd.printf("%-20.20s", sp.common);
-
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(8, 72);
-    M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    M5.Lcd.printf("species %d/%d", chorusSpecies() + 1, SPECIES_COUNT);
-
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(8, 100);
-    M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-    M5.Lcd.printf("%s", chorusEnabled()
-        ? (chorusMode() == MODE_CHORUS ? "chorus" : "solo  ")
-        : "paused");
-
-    // volume bar
-    M5.Lcd.setCursor(8, 140);
-    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.printf("vol %3d%%", (int)(audioGetVolume() * 100.0f + 0.5f));
-    M5.Lcd.drawRect(8, 152, 200, 12, TFT_DARKGREY);
-    M5.Lcd.fillRect(9, 153, (int)(198 * audioGetVolume()), 10, TFT_CYAN);
-
-    M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Lcd.setCursor(8, M5.Lcd.height() - 36);
-    M5.Lcd.print("A/C species  B chorus/solo");
-    M5.Lcd.setCursor(8, M5.Lcd.height() - 24);
-    M5.Lcd.print("hold A/C vol  hold B pause");
-
-    needsRedraw = false;
-}
-
-// live line: active voices + level, refreshed without a full redraw
-static void renderStatus() {
-    M5.Lcd.fillRect(8, 176, 304, 16, TFT_BLACK);
-    M5.Lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(8, 180);
-    M5.Lcd.printf("voices %d  level %.2f   ", syrinxActiveVoices(), syrinxLastLevel());
-}
-
 void setup() {
-    M5.begin(true, false, true, true);  // LCD on, SD off, Serial on, I2C on
-    M5.Power.begin();
+    auto cfg = M5.config();
+    // On the Fire we drive the DAC on GPIO25 ourselves, so M5Unified must not
+    // also claim it. On the CoreS3 the opposite: its Speaker owns the AW88298
+    // bring-up over I2C, and src/audio_spk.cpp streams into it.
+#if LYREBIRD_AUDIO_SPK
+    cfg.internal_spk = true;
+#else
+    cfg.internal_spk = false;
+#endif
+    cfg.internal_mic = false;
+    M5.begin(cfg);
 
     Serial.begin(115200);
-    Serial.println("M5Stack Lyrebird starting...");
+    Serial.printf("Lyrebird starting on board %d\n", (int)M5.getBoard());
 
-    M5.Lcd.setRotation(1);
-    M5.Lcd.setBrightness(120);
+    M5.Display.setRotation(1);
+    M5.Display.setBrightness(BACKLIGHT);
 
+    uiInit();
     audioInit();
     chorusInit();
-    audioSetRunning(true);  // boots into chorus: the standard mode
+    audioSetRunning(true);  // boots into the all-birds chorus: the standard mode
 
-    needsRedraw = true;
+    uiFullRedraw();
 }
 
 void loop() {
     M5.update();
     chorusTick();
 
-    // Button A: hold = volume down, short release = previous species
-    if (M5.BtnA.pressedFor(300)) {
+    bool chromeDirty = false;
+    bool fullDirty = false;
+
+    // Button A: hold = volume down, short release = previous bird
+    if (M5.BtnA.pressedFor(VOL_HOLD_MS)) {
         volHoldA = true;
         uint32_t nowMs = millis();
-        if (nowMs - lastVolStepMs >= 120) {
-            audioSetVolume(audioGetVolume() - 0.02f);
+        if (nowMs - lastVolStepMs >= VOL_STEP_MS) {
+            audioSetVolume(audioGetVolume() - VOL_STEP);
             lastVolStepMs = nowMs;
-            needsRedraw = true;
+            chromeDirty = true;
         }
     }
     if (M5.BtnA.wasReleased()) {
         if (!volHoldA) {
-            chorusSetSpecies(chorusSpecies() - 1);
-            needsRedraw = true;
+            chorusSetSlot(chorusSlot() - 1);
+            fullDirty = true;
         }
         volHoldA = false;
     }
 
-    // Button B: short = chorus <-> solo, hold (1s) = pause/resume
-    if (M5.BtnB.pressedFor(1000) && !bHoldHandled) {
+    // Button B: short = chorus <-> solo, hold = pause/resume. On the all-birds
+    // slot a short press does nothing: that slot is a chorus by definition.
+    if (M5.BtnB.pressedFor(PAUSE_HOLD_MS) && !bHoldHandled) {
         bHoldHandled = true;
         bool on = !chorusEnabled();
         chorusSetEnabled(on);
         audioSetRunning(on);
-        needsRedraw = true;
+        chromeDirty = true;
     }
     if (M5.BtnB.wasReleased()) {
-        if (!bHoldHandled && chorusEnabled()) {
+        if (!bHoldHandled && chorusEnabled() && !chorusAllBirds()) {
             chorusSetMode(chorusMode() == MODE_CHORUS ? MODE_SOLO : MODE_CHORUS);
-            needsRedraw = true;
+            chromeDirty = true;
         }
         bHoldHandled = false;
     }
 
-    // Button C: hold = volume up, short release = next species
-    if (M5.BtnC.pressedFor(300)) {
+    // Button C: hold = volume up, short release = next bird
+    if (M5.BtnC.pressedFor(VOL_HOLD_MS)) {
         volHoldC = true;
         uint32_t nowMs = millis();
-        if (nowMs - lastVolStepMs >= 120) {
-            audioSetVolume(audioGetVolume() + 0.02f);
+        if (nowMs - lastVolStepMs >= VOL_STEP_MS) {
+            audioSetVolume(audioGetVolume() + VOL_STEP);
             lastVolStepMs = nowMs;
-            needsRedraw = true;
+            chromeDirty = true;
         }
     }
     if (M5.BtnC.wasReleased()) {
         if (!volHoldC) {
-            chorusSetSpecies(chorusSpecies() + 1);
-            needsRedraw = true;
+            chorusSetSlot(chorusSlot() + 1);
+            fullDirty = true;
         }
         volHoldC = false;
     }
 
-    if (needsRedraw) render();
+    // a new bird restarts the picture; everything else repaints text in place
+    if (fullDirty) uiFullRedraw();
+    else if (chromeDirty) uiChrome();
 
-    static uint32_t lastStatusMs = 0;
+    static uint32_t lastFrameMs = 0;
     uint32_t now = millis();
-    if (now - lastStatusMs >= 100) {
-        lastStatusMs = now;
-        renderStatus();
+    if (now - lastFrameMs >= FRAME_MS) {
+        lastFrameMs = now;
+        uiFrame();
     }
 
-    delay(5);
+    delay(4);
 }

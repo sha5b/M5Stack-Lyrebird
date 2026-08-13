@@ -1,4 +1,33 @@
 // See syrinx.h. Constants and formulas follow syrinx-processor.js / docs/08 §8.1.
+//
+// The audible shape is the same as the first port; what changed is where the
+// work happens. The old inner loop, per sample per voice, called expf twice
+// (contour, envelope), cosf for AM, and then walked two calibration tables:
+// a 192-entry binary search in betaForF0 and — the real cost — a linear scan
+// in ampPP that starts at index 0 every call and typically runs ~85 iterations
+// to reach beta ~= 1. At eight voices that is well over a hundred million table
+// steps a second on a 240 MHz core, which overran the I2S DMA. The DAC then got
+// handed a late buffer, and a late buffer is a click. That was the crackle.
+//
+// The tables are regular, which the first port did not exploit:
+//   - CAL_INV_F0_GRID is geometric (ratio 1.0150616), so its index is a
+//     division in the log domain, and the log of f0 is already being tracked;
+//   - CAL_PRESSURE_GRID is uniform (0 .. 1.4 step 0.05);
+//   - CAL_BETA_GRID is uniform in three runs (step .01 / .05 / .2).
+// So every lookup is now O(1) arithmetic with the same bilinear result, and
+// beta and ampPP stay *exact*, per sample. Deep-AM syllables (the wren trill
+// modulates pressure 95 % at 28 Hz) depend on that: in the Mindlin model
+// pressure moves pitch, so approximating beta at control rate audibly flattens
+// them.
+//
+// What did move to a 32-sample control block is f0 itself — the contour, the
+// tract retune and vibrato — with pitch tracked between blocks by a
+// multiplicative ramp, so nothing steps. The tract was already retuned at that
+// rate in the first port.
+//
+// Also incremental now, and exact: the envelope (linear attack, recursive
+// exponential decay, linear release) and the AM oscillator (unit-circle
+// rotation) — no libm in the sample loop at all.
 #include "syrinx.h"
 #include "calibration.h"
 #include <math.h>
@@ -8,11 +37,12 @@
 #include <freertos/portmacro.h>
 
 #define MAX_CONTOUR 8
+#define CTRL_MASK (SYRINX_CTRL - 1)
 
 static const float CALIBRATION_GAMMA = 24000.0f; // gamma the offline table was measured at
 static const float PHI_AT_BETA_ONE = 0.17061f;   // measured f0/gamma at alpha 0.1, beta 1
 static const float DETUNE_TWO = 1.0040348f;      // +7 cents: the second syringeal side
-#define FILTER_UPDATE 32                          // samples between tract retunes
+static const float LOG_DETUNE_TWO = 0.0040267f;  // logf(DETUNE_TWO)
 static const float DEFAULT_ATTACK = 0.008f;
 static const float RELEASE_S = 0.006f;
 static const float DECAY_TAU_DIVISOR = 2.5f;
@@ -20,13 +50,41 @@ static const float HOLD_FRACTION = 0.75f;
 static const float SOURCE_GAIN = 0.35f;
 static const float ODE_X0 = 1.0e-4f;
 
+// Mix soft-clip: tanh(drive * x) * trim, so small-signal gain is drive * trim
+// and the ceiling is trim. The first port used 1.6 / 0.8 — same gain, but a
+// ceiling of 0.8 puts a duet into hard saturation, and that grit reads as
+// crackle on an 8-bit DAC. Keeping the gain (1.216 vs 1.28, half a dB) while
+// lifting the ceiling moves the knee above where a chorus sits.
+static const float MIX_DRIVE = 1.28f;
+static const float MIX_TRIM = 0.95f;
+
 // timbre classes: {gain, q}
 static const float TIMBRE_GAIN[3] = {1.0f, 1.25f, 1.75f};
 static const float TIMBRE_Q[3] = {9.0f, 5.0f, 3.0f};
 
+// uniform-grid constants, asserted against the tables in syrinxInit
+static const float PRESSURE_STEP_INV = 20.0f;   // 1 / 0.05
+static const int BETA_SEG1 = 85;                // beta 0.15 .. 1.00, step 0.01
+static const int BETA_SEG2 = 145;               // beta 1.00 .. 4.00, step 0.05
+                                                // beta 4.00 .. 16.0, step 0.20
+
 static float s_sr = 22050.0f;
+static float s_invSr = 1.0f / 22050.0f;
 static float s_dcCoeff;  // 180 Hz one-pole (source HP and output DC block)
 static float s_lpCoeff;  // 12 kHz one-pole lowpass
+static float s_f0LogBase;  // logf(CAL_INV_F0_GRID[0])
+static float s_f0InvLogR;  // 1 / logf(grid ratio)
+
+// tanh to ~1e-5 on [-3, 3] (order 7/6 Pade), flat outside. The low-order form
+// is 2 % off at the knee, which is a different clipper, not this one.
+static inline float fastTanh(float x) {
+    if (x < -3.0f) return -1.0f;
+    if (x > 3.0f) return 1.0f;
+    float x2 = x * x;
+    float num = x * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
+    float den = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + 28.0f * x2));
+    return num / den;
+}
 
 struct Biquad {
     float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
@@ -63,9 +121,9 @@ struct Voice {
     float dur = 0;       // after durScale
     float level = 0;     // after levelScale
     float harmonic = 0;
-    float am = 0, amDepth = 0;
-    float vibRate = 0, vibDepth = 0;
+    float amDepth = 0;
     float gain = 1;
+    uint8_t tag = 0;
     // contour cache: log(hz * pitchMul) per point, plus segment cursor
     uint8_t nContour = 0;
     float contT[MAX_CONTOUR];
@@ -76,6 +134,26 @@ struct Voice {
     int32_t durSamples = 0;
     int32_t envN = 0;
 
+    // pitch: set at each control block, ramped per sample. Both the linear and
+    // the log value are carried — the grid index needs the log, the in-cell
+    // fraction needs the frequency.
+    float f0 = 440.0f, logF0 = 6.0866f;
+    float f0Ratio = 1.0f, logF0Inc = 0.0f;
+    float gammaK = 1.0f, logGammaK = 0.0f;   // CALIBRATION_GAMMA / gamma
+
+    // envelope, evaluated incrementally; envPhase is just "decay has started"
+    uint8_t envPhase = 0;
+    bool envHold = false;
+    int32_t envAtkN = 1, envKneeN = 0, envRelStart = 0, envRelN = 0;
+    float envAtkInc = 1, envAtkS = 0, envKneeS = 0, envInvTau = 0;
+    float envDecMul = 1, envRelInc = 0;
+    float env = 0;
+
+    // recursive quadrature oscillators (rotate one sample / one control block)
+    bool hasAm = false, hasVib = false;
+    float amC = 1, amS = 0, amRotC = 1, amRotS = 0;
+    float vibC = 1, vibS = 0, vibRotC = 1, vibRotS = 0, vibDepth = 0;
+
     float gamma = CALIBRATION_GAMMA;
     int oversample = 16;
     float dt = 1.0f / (22050.0f * 16.0f);
@@ -85,7 +163,6 @@ struct Voice {
     Biquad tractHarm[2];
     float srcHpX[2] = {0, 0}, srcHpY[2] = {0, 0};
     float dcX = 0, dcY = 0, lpY = 0;
-    float env = 0;
 };
 
 static Voice s_voices[SYRINX_MAX_VOICES];
@@ -94,8 +171,11 @@ static float s_lastLevel = 0;
 
 void syrinxInit(float sampleRate) {
     s_sr = sampleRate;
+    s_invSr = 1.0f / sampleRate;
     s_dcCoeff = expf(-2.0f * (float)M_PI * 180.0f / s_sr);
     s_lpCoeff = 1.0f - expf(-2.0f * (float)M_PI * 12000.0f / s_sr);
+    s_f0LogBase = logf(CAL_INV_F0_GRID[0]);
+    s_f0InvLogR = 1.0f / logf(CAL_INV_F0_GRID[1] / CAL_INV_F0_GRID[0]);
     syrinxPanic();
 }
 
@@ -121,29 +201,43 @@ static inline float clampBeta(float beta) {
     return fminf(CAL_BETA_MAX, fmaxf(CAL_BETA_MIN, beta));
 }
 
-// beta for a target f0 via the offline table (bilinear over pressure x f0).
-static float betaForF0(float targetF0, float pressure, float gamma) {
-    float f0 = targetF0 * CALIBRATION_GAMMA / gamma;
-    // pressure row (linear scan over 29 entries, as in the worklet)
-    int pi = 0;
-    while (pi < CAL_PRESSURE_GRID_LEN - 2 && CAL_PRESSURE_GRID[pi + 1] < pressure) pi++;
-    float pSpan = CAL_PRESSURE_GRID[pi + 1] - CAL_PRESSURE_GRID[pi];
-    if (pSpan == 0) pSpan = 1;
-    float pFrac = fminf(1.0f, fmaxf(0.0f, (pressure - CAL_PRESSURE_GRID[pi]) / pSpan));
+// Row index + in-row fraction on the uniform pressure grid, O(1). Equivalent to
+// the old linear scan, which stopped at the last row whose successor is not
+// below `pressure`, then clamped the fraction.
+static inline int pressureRow(float pressure, float& frac) {
+    float p = pressure * PRESSURE_STEP_INV;
+    int pi = (int)p;
+    if (pi < 0) pi = 0;
+    else if (pi > CAL_PRESSURE_GRID_LEN - 2) pi = CAL_PRESSURE_GRID_LEN - 2;
+    float f = p - (float)pi;
+    frac = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+    return pi;
+}
 
-    // f0 column (binary search over the 192-entry grid)
+// beta for a target f0 via the offline table (bilinear over pressure x f0).
+// logF0 is log(targetF0); the caller already tracks it, and the f0 grid is
+// geometric, so the column index is one multiply instead of a binary search.
+static inline float betaForF0(float targetF0, float logF0, float pressure, float gammaK,
+                              float logGammaK) {
+    float f0 = targetF0 * gammaK;
+    float pFrac;
+    int pi = pressureRow(pressure, pFrac);
+
     float clamped = fminf(fmaxf(f0, CAL_INV_F0_GRID[0]), CAL_INV_F0_GRID[CAL_INV_F0_GRID_LEN - 1]);
-    int lo = 0, hi = CAL_INV_F0_GRID_LEN - 1;
-    while (hi - lo > 1) {
-        int mid = (lo + hi) >> 1;
-        if (CAL_INV_F0_GRID[mid] <= clamped) lo = mid; else hi = mid;
-    }
+    int lo = (int)((logF0 + logGammaK - s_f0LogBase) * s_f0InvLogR);
+    if (lo < 0) lo = 0;
+    else if (lo > CAL_INV_F0_GRID_LEN - 2) lo = CAL_INV_F0_GRID_LEN - 2;
+    // the grid is geometric to 2.5e-6, not exactly, so nudge onto the true cell
+    if (lo < CAL_INV_F0_GRID_LEN - 2 && CAL_INV_F0_GRID[lo + 1] <= clamped) lo++;
+    else if (lo > 0 && CAL_INV_F0_GRID[lo] > clamped) lo--;
+    int hi = lo + 1;
+
     float fSpan = CAL_INV_F0_GRID[hi] - CAL_INV_F0_GRID[lo];
     if (fSpan == 0) fSpan = 1;
     float fFrac = (clamped - CAL_INV_F0_GRID[lo]) / fSpan;
 
     const float* rowA = CAL_INV_BETA[pi];
-    const float* rowB = CAL_INV_BETA[pi + 1 < 29 ? pi + 1 : 28];
+    const float* rowB = CAL_INV_BETA[pi + 1];
     float a = rowA[lo] + (rowA[hi] - rowA[lo]) * fFrac;
     float b = rowB[lo] + (rowB[hi] - rowB[lo]) * fFrac;
     float beta = a + (b - a) * pFrac;
@@ -155,79 +249,60 @@ static float betaForF0(float targetF0, float pressure, float gamma) {
 }
 
 // peak-to-peak swing of y/gamma, divided out of the source so loudness
-// follows the envelope instead of the pitch (§8.1).
-static float ampPP(float alpha, float beta, float pressure) {
-    int pi = 0;
-    while (pi < CAL_PRESSURE_GRID_LEN - 2 && CAL_PRESSURE_GRID[pi + 1] < pressure) pi++;
-    float pSpan = CAL_PRESSURE_GRID[pi + 1] - CAL_PRESSURE_GRID[pi];
-    if (pSpan == 0) pSpan = 1;
-    float pFrac = fminf(1.0f, fmaxf(0.0f, (pressure - CAL_PRESSURE_GRID[pi]) / pSpan));
+// follows the envelope instead of the pitch (§8.1). The beta grid is uniform
+// in three runs, so its index is arithmetic rather than a 205-step scan.
+static inline float ampPP(float alpha, float beta, float pressure) {
+    float pFrac;
+    int pi = pressureRow(pressure, pFrac);
 
-    int bi = 0;
-    while (bi < CAL_BETA_GRID_LEN - 2 && CAL_BETA_GRID[bi + 1] < beta) bi++;
+    int bi;
+    if (beta < 1.0f) bi = (int)((beta - 0.15f) * 100.0f);
+    else if (beta < 4.0f) bi = BETA_SEG1 + (int)((beta - 1.0f) * 20.0f);
+    else bi = BETA_SEG2 + (int)((beta - 4.0f) * 5.0f);
+    if (bi < 0) bi = 0;
+    else if (bi > CAL_BETA_GRID_LEN - 2) bi = CAL_BETA_GRID_LEN - 2;
+
     float bSpan = CAL_BETA_GRID[bi + 1] - CAL_BETA_GRID[bi];
     if (bSpan == 0) bSpan = 1;
-    float bFrac = fminf(1.0f, fmaxf(0.0f, (beta - CAL_BETA_GRID[bi]) / bSpan));
+    float bFrac = (beta - CAL_BETA_GRID[bi]) / bSpan;
+    if (bFrac < 0.0f) bFrac = 0.0f;
+    else if (bFrac > 1.0f) bFrac = 1.0f;
 
     const float* rowA = CAL_AMP_PP[pi];
-    const float* rowB = CAL_AMP_PP[pi + 1 < 29 ? pi + 1 : 28];
+    const float* rowB = CAL_AMP_PP[pi + 1];
     float a = rowA[bi] + (rowA[bi + 1] - rowA[bi]) * bFrac;
     float b = rowB[bi] + (rowB[bi + 1] - rowB[bi]) * bFrac;
     float amp = a + (b - a) * pFrac;
     return amp > 0.05f ? amp : 0.5f + 3.4f * alpha + 0.62f * beta;
 }
 
-// pitch in Hz at time fraction u, interpolated in log frequency.
-static inline float contourAt(Voice& v, float u) {
-    if (v.nContour == 0) return 440.0f;
-    if (u <= v.contT[0]) return expf(v.contLog[0]);
-    if (u >= v.contT[v.nContour - 1]) return expf(v.contLog[v.nContour - 1]);
+// log(pitch in Hz) at time fraction u — the contour is stored in log already,
+// so the control block pays one expf instead of the old one per sample.
+static inline float contourLogAt(Voice& v, float u) {
+    if (v.nContour == 0) return 6.0866f;  // log(440)
+    if (u <= v.contT[0]) return v.contLog[0];
+    if (u >= v.contT[v.nContour - 1]) return v.contLog[v.nContour - 1];
     // the cursor only moves forward within a syllable
     while (v.seg < v.nContour - 2 && u > v.contT[v.seg + 1]) v.seg++;
     while (v.seg > 0 && u < v.contT[v.seg]) v.seg--;
     float t0 = v.contT[v.seg], t1 = v.contT[v.seg + 1];
     float frac = (u - t0) / fmaxf(1e-6f, t1 - t0);
-    return expf(v.contLog[v.seg] + (v.contLog[v.seg + 1] - v.contLog[v.seg]) * frac);
-}
-
-// the §8.1 envelope: linear attack, sustain-or-exponential-decay, 6 ms release.
-static float envelopeAt(const Voice& v, int32_t i) {
-    int32_t n = v.envN;
-    if (n <= 1 || i >= n) return 0;
-    float dur = (float)n / s_sr;
-    float t = (float)i / s_sr;
-    float atk = v.syl->attack > 0 ? v.syl->attack : DEFAULT_ATTACK;
-    atk = fminf(fmaxf(atk, 1.0f / s_sr), 0.9f * dur);
-    float tau = dur / DECAY_TAU_DIVISOR;
-
-    float env;
-    if (t < atk) {
-        env = t / atk;
-    } else if (v.syl->hold) {
-        float knee = HOLD_FRACTION * dur;
-        env = t > knee ? expf(-(t - knee) / tau) : 1.0f;
-    } else {
-        env = expf(-(t - atk) / tau);
-    }
-
-    int32_t rel = (int32_t)lroundf(RELEASE_S * s_sr);
-    if (rel > 1 && rel < n && i >= n - rel) {
-        env *= fmaxf(0.0f, 1.0f - (float)(i - (n - rel)) / (float)(rel - 1));
-    }
-    return env;
+    return v.contLog[v.seg] + (v.contLog[v.seg + 1] - v.contLog[v.seg]) * frac;
 }
 
 // one sample of one oscillator: OVERSAMPLE Euler steps, returns the HP'd source.
-static float stepOsc(Voice& v, int index, float alpha, float beta, float amp) {
+static inline float stepOsc(Voice& v, int index, float alpha, float beta, float amp) {
     float g = v.gamma;
     float g2 = g * g;
     float x = v.x[index];
     float y = v.y[index];
     float dt = v.dt;
+    float aG2 = alpha * g2;
+    float bG2 = beta * g2;
     for (int s = 0; s < v.oversample; s++) {
-        float dx = y;
-        float dy = -alpha * g2 - beta * g2 * x - g2 * x * x * x - g * x * x * y + g2 * x * x - g * x * y;
-        x += dx * dt;
+        float x2 = x * x;
+        float dy = -aG2 - bG2 * x - g2 * x2 * x - g * x2 * y + g2 * x2 - g * x * y;
+        x += y * dt;
         y += dy * dt;
     }
     if (!(fabsf(x) < 1e6f && fabsf(y) < 1e12f)) {
@@ -262,11 +337,9 @@ bool syrinxNote(const SpeciesData* species, uint8_t syllableIdx, const SyrinxVoi
     if (v.dur < 0.02f) v.dur = 0.02f;
     v.level = fminf(1.0f, syl->level * voicing.levelScale);
     v.harmonic = fminf(1.0f, syl->harmonic * voicing.harmonicScale);
-    v.am = syl->am * voicing.amScale;
     v.amDepth = syl->amDepth;
-    v.vibRate = syl->vibRate * voicing.vibScale;
-    v.vibDepth = syl->vibDepth;
     v.gain = voicing.gain;
+    v.tag = voicing.tag;
 
     float logPitch = logf(voicing.pitchMul);
     v.nContour = syl->nContour > MAX_CONTOUR ? MAX_CONTOUR : syl->nContour;
@@ -281,11 +354,60 @@ bool syrinxNote(const SpeciesData* species, uint8_t syllableIdx, const SyrinxVoi
     v.gamma = fminf(150000.0f, fmaxf(1200.0f, gammaForContour(syl) * voicing.pitchMul));
     v.oversample = oversampleForGamma(v.gamma);
     v.dt = 1.0f / (s_sr * v.oversample);
+    v.gammaK = CALIBRATION_GAMMA / v.gamma;
+    v.logGammaK = logf(v.gammaK);
 
     v.pos = 0;
     v.durSamples = (int32_t)ceilf((v.dur + 0.02f) * s_sr);
     v.envN = (int32_t)lroundf(v.dur * s_sr);
     if (v.envN < 2) v.envN = 2;
+
+    // Envelope as increments. The thresholds are the exact sample at which the
+    // old closed form changed branch: ceil for the attack (which tested t < atk)
+    // and floor+1 for the hold knee (which tested t > knee), so a note that does
+    // not land on a sample boundary still lines up.
+    float envDur = (float)v.envN * s_invSr;
+    float atk = syl->attack > 0 ? syl->attack : DEFAULT_ATTACK;
+    atk = fminf(fmaxf(atk, s_invSr), 0.9f * envDur);
+    v.envAtkS = atk;
+    v.envAtkN = (int32_t)ceilf(atk * s_sr);
+    if (v.envAtkN < 1) v.envAtkN = 1;
+    v.envAtkInc = 1.0f / (atk * s_sr);
+    v.envHold = syl->hold != 0;
+    v.envKneeS = HOLD_FRACTION * envDur;
+    v.envKneeN = (int32_t)floorf(v.envKneeS * s_sr) + 1;
+    float tau = envDur / DECAY_TAU_DIVISOR;
+    v.envInvTau = 1.0f / fmaxf(1e-4f, tau);
+    v.envDecMul = expf(-s_invSr * v.envInvTau);
+    int32_t rel = (int32_t)lroundf(RELEASE_S * s_sr);
+    v.envRelN = (rel > 1 && rel < v.envN) ? rel : 0;
+    v.envRelStart = v.envN - v.envRelN;
+    v.envRelInc = v.envRelN > 1 ? 1.0f / (float)(v.envRelN - 1) : 0.0f;
+    v.envPhase = 0;
+    v.env = 0;
+
+    // AM / vibrato as unit-circle rotations: AM steps a sample at a time,
+    // vibrato a control block at a time (one authored syllable uses it).
+    float am = syl->am * voicing.amScale;
+    v.hasAm = am > 0.0f && syl->amDepth > 0.0f;
+    if (v.hasAm) {
+        float w = 2.0f * (float)M_PI * am * s_invSr;
+        v.amRotC = cosf(w);
+        v.amRotS = sinf(w);
+    }
+    v.amC = 1.0f;  // cos(0): the AM factor starts un-gated, as at t = 0
+    v.amS = 0.0f;
+
+    float vibRate = syl->vibRate * voicing.vibScale;
+    v.hasVib = vibRate > 0.0f && syl->vibDepth > 0.0f;
+    v.vibDepth = syl->vibDepth;
+    if (v.hasVib) {
+        float w = 2.0f * (float)M_PI * vibRate * SYRINX_CTRL * s_invSr;
+        v.vibRotC = cosf(w);
+        v.vibRotS = sinf(w);
+    }
+    v.vibC = 1.0f;  // sin(0) = 0: no pitch offset on the first block
+    v.vibS = 0.0f;
 
     v.x[0] = v.x[1] = ODE_X0;
     v.y[0] = v.y[1] = 0;
@@ -295,7 +417,11 @@ bool syrinxNote(const SpeciesData* species, uint8_t syllableIdx, const SyrinxVoi
     v.tract[1].reset();
     v.tractHarm[0].reset();
     v.tractHarm[1].reset();
-    v.env = 0;
+
+    v.logF0 = contourLogAt(v, 0.0f);
+    v.f0 = expf(v.logF0);
+    v.f0Ratio = 1.0f;
+    v.logF0Inc = 0.0f;
 
     portENTER_CRITICAL(&s_mux);
     v.active = true;  // last: the render task picks the voice up only fully armed
@@ -312,12 +438,15 @@ void syrinxRender(float* out, int n) {
         if (!v.active) continue;
         const SyllableData* syl = v.syl;
         uint8_t timbre = syl->timbre < 3 ? syl->timbre : 0;
-        float tractQ = TIMBRE_Q[timbre];
-        float timbreGain = TIMBRE_GAIN[timbre];
-        bool twoVoices = syl->two != 0;
-        float invDur = 1.0f / v.dur;
+        const float tractQ = TIMBRE_Q[timbre];
+        const float timbreGain = TIMBRE_GAIN[timbre];
+        const bool twoVoices = syl->two != 0;
+        const bool harm = v.harmonic > 0;
+        const float harmGain = v.harmonic * 0.5f;
+        const float invDur = 1.0f / v.dur;
 
-        for (int i = 0; i < n; i++) {
+        int i = 0;
+        while (i < n) {
             int32_t idx = v.pos;
             if (idx >= v.durSamples) {
                 portENTER_CRITICAL(&s_mux);
@@ -325,64 +454,121 @@ void syrinxRender(float* out, int n) {
                 portEXIT_CRITICAL(&s_mux);
                 break;
             }
-            v.pos++;
-            float t = (float)idx / s_sr;
-            float u = fminf(1.0f, t * invDur);
 
-            float f0 = contourAt(v, u);
-            if (v.vibRate > 0) f0 *= 1.0f + v.vibDepth * sinf(2.0f * (float)M_PI * v.vibRate * t);
+            // ---- control rate: the pitch contour and the tract tuning -------
+            if ((idx & CTRL_MASK) == 0) {
+                float uNow = fminf(1.0f, (float)idx * s_invSr * invDur);
+                float uEnd = fminf(1.0f, (float)(idx + SYRINX_CTRL) * s_invSr * invDur);
+                float logNow = contourLogAt(v, uNow);
+                float logEnd = contourLogAt(v, uEnd);
+                if (v.hasVib) {
+                    // vibrato lives in the log chain so f0 and logF0 stay in step
+                    logNow += log1pf(v.vibDepth * v.vibS);
+                    float nc = v.vibC * v.vibRotC - v.vibS * v.vibRotS;
+                    float ns = v.vibS * v.vibRotC + v.vibC * v.vibRotS;
+                    v.vibC = nc;
+                    v.vibS = ns;
+                    logEnd += log1pf(v.vibDepth * v.vibS);
+                }
+                v.logF0 = logNow;
+                v.f0 = expf(logNow);  // re-anchored each block: the ramp cannot drift
+                v.logF0Inc = (logEnd - logNow) * (1.0f / (float)SYRINX_CTRL);
+                v.f0Ratio = expf(v.logF0Inc);
 
-            // AM gates the *pressure* only, never the output gain (§8.1).
-            float env = envelopeAt(v, idx);
-            float psEnv = env;
-            if (v.am > 0) {
-                psEnv *= 1.0f - v.amDepth * (0.5f - 0.5f * cosf(2.0f * (float)M_PI * v.am * t));
-            }
-            float pressure = fminf(1.4f, fmaxf(0.0f, v.level * psEnv * timbreGain));
-            v.env = env;
-            float alpha = 0.05f + 0.4f * pressure;
-
-            if ((idx & (FILTER_UPDATE - 1)) == 0) {
-                v.tract[0].setBandpass(f0, tractQ);
-                if (twoVoices) v.tract[1].setBandpass(f0 * DETUNE_TWO, tractQ);
-                if (v.harmonic > 0) {
-                    v.tractHarm[0].setBandpass(f0 * 2.0f, tractQ);
-                    if (twoVoices) v.tractHarm[1].setBandpass(f0 * 2.0f * DETUNE_TWO, tractQ);
+                v.tract[0].setBandpass(v.f0, tractQ);
+                if (harm) v.tractHarm[0].setBandpass(v.f0 * 2.0f, tractQ);
+                if (twoVoices) {
+                    v.tract[1].setBandpass(v.f0 * DETUNE_TWO, tractQ);
+                    if (harm) v.tractHarm[1].setBandpass(v.f0 * 2.0f * DETUNE_TWO, tractQ);
                 }
             }
 
-            float betaClean = betaForF0(f0, pressure, v.gamma);
-            float ampA = ampPP(alpha, betaClean, pressure);
-            float source = stepOsc(v, 0, alpha, betaClean, ampA);
-            float sample = v.tract[0].process(source);
-            if (v.harmonic > 0) sample += v.harmonic * 0.5f * v.tractHarm[0].process(source);
+            // run to the end of this control block, this render buffer, or the note
+            int chunk = SYRINX_CTRL - (int)(idx & CTRL_MASK);
+            if (chunk > n - i) chunk = n - i;
+            if (idx + chunk > v.durSamples) chunk = (int)(v.durSamples - idx);
 
-            if (twoVoices) {
-                float betaB = betaForF0(f0 * DETUNE_TWO, pressure, v.gamma);
-                float ampB = ampPP(alpha, betaB, pressure);
-                float sourceB = stepOsc(v, 1, alpha, betaB, ampB);
-                float filteredB = v.tract[1].process(sourceB);
-                if (v.harmonic > 0) filteredB += v.harmonic * 0.5f * v.tractHarm[1].process(sourceB);
-                sample = 0.5f * sample + 0.5f * filteredB;
+            for (int k = 0; k < chunk; k++, i++, idx++) {
+                // ---- envelope, incrementally -------------------------------
+                float env;
+                if (idx >= v.envN) {
+                    env = 0.0f;
+                    v.env = 0.0f;
+                } else {
+                    if (idx < v.envAtkN) {
+                        v.env = (float)idx * v.envAtkInc;
+                    } else if (v.envHold && idx < v.envKneeN) {
+                        v.env = 1.0f;
+                    } else if (v.envPhase) {
+                        v.env *= v.envDecMul;
+                    } else {
+                        // first decay sample: land exactly on the closed form,
+                        // then recurse. One expf per note, none per sample.
+                        v.envPhase = 1;
+                        float t = (float)idx * s_invSr;
+                        float ref = v.envHold ? v.envKneeS : v.envAtkS;
+                        v.env = t > ref ? expf(-(t - ref) * v.envInvTau) : 1.0f;
+                    }
+                    env = v.env;
+                    if (v.envRelN && idx >= v.envRelStart) {
+                        float r = 1.0f - (float)(idx - v.envRelStart) * v.envRelInc;
+                        env *= r > 0.0f ? r : 0.0f;
+                    }
+                }
+
+                // AM gates the *pressure* only, never the output gain (§8.1).
+                float psEnv = env;
+                if (v.hasAm) {
+                    psEnv *= 1.0f - v.amDepth * (0.5f - 0.5f * v.amC);
+                    float nc = v.amC * v.amRotC - v.amS * v.amRotS;
+                    float ns = v.amS * v.amRotC + v.amC * v.amRotS;
+                    v.amC = nc;
+                    v.amS = ns;
+                }
+                float pressure = v.level * psEnv * timbreGain;
+                if (pressure > 1.4f) pressure = 1.4f;
+                else if (pressure < 0.0f) pressure = 0.0f;
+                float alpha = 0.05f + 0.4f * pressure;
+
+                float beta = betaForF0(v.f0, v.logF0, pressure, v.gammaK, v.logGammaK);
+                float amp = ampPP(alpha, beta, pressure);
+                float source = stepOsc(v, 0, alpha, beta, amp);
+                float sample = v.tract[0].process(source);
+                if (harm) sample += harmGain * v.tractHarm[0].process(source);
+
+                if (twoVoices) {
+                    float betaB = betaForF0(v.f0 * DETUNE_TWO, v.logF0 + LOG_DETUNE_TWO,
+                                            pressure, v.gammaK, v.logGammaK);
+                    float ampB = ampPP(alpha, betaB, pressure);
+                    float sourceB = stepOsc(v, 1, alpha, betaB, ampB);
+                    float filteredB = v.tract[1].process(sourceB);
+                    if (harm) filteredB += harmGain * v.tractHarm[1].process(sourceB);
+                    sample = 0.5f * sample + 0.5f * filteredB;
+                }
+
+                // advance the pitch ramp for the next sample
+                v.f0 *= v.f0Ratio;
+                v.logF0 += v.logF0Inc;
+
+                // DC block, then tracheal roll-off
+                float hp = sample - v.dcX + s_dcCoeff * v.dcY;
+                v.dcX = sample;
+                v.dcY = hp;
+                v.lpY += s_lpCoeff * (hp - v.lpY);
+
+                // the envelope also acts as a linear output gain (§8.1)
+                float value = v.lpY * v.gain * env;
+                out[i] += value;
+                float av = fabsf(value);
+                if (av > peak) peak = av;
             }
-
-            // DC block, then tracheal roll-off
-            float hp = sample - v.dcX + s_dcCoeff * v.dcY;
-            v.dcX = sample;
-            v.dcY = hp;
-            v.lpY += s_lpCoeff * (hp - v.lpY);
-
-            // the envelope also acts as a linear output gain (§8.1)
-            float value = v.lpY * v.gain * env;
-            out[i] += value;
-            float av = fabsf(value);
-            if (av > peak) peak = av;
+            v.pos = idx;
         }
     }
 
     // gentle saturation keeps overlapping voices inside [-1, 1]
     for (int i = 0; i < n; i++) {
-        out[i] = tanhf(out[i] * 1.6f) * 0.8f;
+        out[i] = fastTanh(out[i] * MIX_DRIVE) * MIX_TRIM;
     }
     s_lastLevel = fmaxf(s_lastLevel * 0.9f, peak);
 }
@@ -395,3 +581,16 @@ int syrinxActiveVoices() {
 }
 
 float syrinxLastLevel() { return s_lastLevel; }
+
+int syrinxSnapshot(SyrinxVoiceInfo* out, int max) {
+    int n = 0;
+    for (auto& v : s_voices) {
+        if (n >= max) break;
+        if (!v.active) continue;
+        out[n].f0 = v.f0;
+        out[n].env = v.env;
+        out[n].tag = v.tag;
+        n++;
+    }
+    return n;
+}

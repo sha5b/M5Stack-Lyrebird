@@ -1,132 +1,178 @@
-/* Global Styles — Wayland Industries Lab Aesthetic */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
+/**
+ * Laboratory light — the same ground as lyrebird.variable.gallery.
+ *
+ * Taken from the parent project's `styles/tokens.css`, `reset.css`, `typography.css` and
+ * `controls.css`, flattened into one file because this site is one page and does not need
+ * five. The values are the parent's values; where a name is shared it means the same thing,
+ * so the two sites can drift only on purpose.
+ *
+ * The reference is a printed specimen sheet, not a dark synth UI: paper ground, hairline
+ * rules instead of boxes and shadows, monospace for every figure that is a measurement, and
+ * exactly one saturated colour reserved for live response. Everything else is graphite, so
+ * that colour always means something. Here "live response" is the board answering, the
+ * progress bar moving, and the one filled action per step.
+ *
+ * This replaces a dark glass-and-blur theme inherited from CYD-Physarum. The old theme was
+ * not worse in the abstract; it was a different instrument's chrome on this instrument.
+ */
 :root {
-    /* Core palette */
-    --lab-bg: #030508;
-    --lab-surface: #0a0e14;
-    --lab-surface-hover: #0f1520;
-    --lab-surface-elevated: #111923;
-    --lab-text-primary: rgba(240, 245, 255, 0.92);
-    --lab-text-secondary: rgba(160, 175, 200, 0.55);
-    --lab-text-tertiary: rgba(120, 140, 170, 0.35);
-    --lab-border: rgba(255, 255, 255, 0.06);
-    --lab-border-hover: rgba(255, 255, 255, 0.12);
-    --lab-accent: #4fd1c5;
-    --lab-accent-dim: rgba(79, 209, 197, 0.15);
-    --lab-accent-glow: rgba(79, 209, 197, 0.08);
-    --lab-danger: #f56565;
-    --lab-glass: rgba(10, 14, 20, 0.75);
-    --lab-glass-border: rgba(255, 255, 255, 0.04);
+	--paper: #fafbfc;
+	--paper-raised: #ffffff;
+	--rule: #d8dee7;
+	--rule-strong: #b9c2ce;
 
-    /* Typography */
-    --font-main: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--ink: #10161f;
+	--ink-dim: #52606f;
+	--ink-faint: #8d99a8;
 
-    /* Spacing */
-    --space-xs: 0.25rem;
-    --space-sm: 0.5rem;
-    --space-md: 1rem;
-    --space-lg: 1.5rem;
-    --space-xl: 2.5rem;
+	/* the one saturated colour: live activation and selection, and nothing else */
+	--signal: #5b3fd6;
+	--signal-soft: rgba(91, 63, 214, 0.1);
 
-    /* Transitions */
-    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-    --transition-fast: 150ms var(--ease-out);
-    --transition-normal: 250ms var(--ease-out);
-    --transition-slow: 400ms var(--ease-out);
-}
+	/* a failed write is the one other thing that must be findable at a glance */
+	--warn: #b91c1c;
+	--warn-soft: rgba(185, 28, 28, 0.07);
+	--ok: #059669;
 
-body {
-    margin: 0;
-    padding: 0;
-    background-color: var(--lab-bg);
-    color: var(--lab-text-primary);
-    font-family: var(--font-main);
-    font-weight: 400;
-    line-height: 1.6;
-    letter-spacing: 0.01em;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    overflow-y: auto;
-}
+	--font-sans:
+		'IBM Plex Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 
-html, body {
-    width: 100%;
-    height: 100%;
+	--radius: 3px;
+	color-scheme: light;
 }
 
 * {
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-    box-sizing: border-box;
+	box-sizing: border-box;
+	scrollbar-width: thin;
+	scrollbar-color: var(--rule-strong) transparent;
 }
 
-/* Links */
+html,
+body {
+	margin: 0;
+	padding: 0;
+	min-height: 100%;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--font-sans);
+	font-size: 15px;
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+	margin: 0;
+	font-weight: 600;
+	letter-spacing: -0.006em;
+}
+
+/* Every figure, id and log line. The lab-instrument half of the pairing. */
+code,
+.mono {
+	font-family: var(--font-mono);
+	font-size: 0.88em;
+	font-variant-numeric: tabular-nums;
+}
+
+code {
+	padding: 0.08em 0.3em;
+	border: 1px solid var(--rule);
+	border-radius: var(--radius);
+	background: var(--paper-raised);
+	color: var(--ink);
+	user-select: text;
+}
+
 a {
-    color: var(--lab-accent);
-    text-decoration: none;
-    transition: color var(--transition-fast), opacity var(--transition-fast);
+	color: var(--signal);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.15em;
 }
 
-a:hover {
-    color: var(--lab-text-primary);
-}
+/* ---------------------------------------------------------------- controls -- */
 
-/* Buttons */
 button,
-input[type="button"],
-input[type="submit"],
+select,
+input,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+button,
 .button-like {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.9rem;
-    border: 1px solid var(--lab-border);
-    border-radius: 6px;
-    background: var(--lab-surface);
-    color: var(--lab-text-primary);
-    font-family: var(--font-main);
-    font-size: 0.78rem;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    text-align: center;
-    transition: all var(--transition-fast);
-    backdrop-filter: blur(8px);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	cursor: pointer;
+	background: var(--paper-raised);
+	border: 1px solid var(--rule);
+	border-radius: var(--radius);
+	padding: 0.4rem 0.7rem;
+	font-size: 0.76rem;
+	font-weight: 500;
+	letter-spacing: 0.015em;
+	color: var(--ink-dim);
+	text-decoration: none;
+	transition:
+		background 110ms ease,
+		border-color 110ms ease,
+		color 110ms ease;
 }
 
-button:hover,
-input[type="button"]:hover,
-input[type="submit"]:hover,
+button:hover:not(:disabled),
 .button-like:hover {
-    background: var(--lab-surface-hover);
-    border-color: var(--lab-border-hover);
-    color: var(--lab-text-primary);
+	border-color: var(--rule-strong);
+	color: var(--ink);
 }
 
-button:active {
-    transform: scale(0.97);
+button:focus-visible,
+.button-like:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+	outline: 2px solid var(--signal);
+	outline-offset: 1px;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-    width: 6px;
+button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
 }
 
-::-webkit-scrollbar-track {
-    background: transparent;
+/* The one filled control in a step: the action that step exists for. */
+button.primary {
+	background: var(--ink);
+	border-color: var(--ink);
+	color: var(--paper-raised);
+	padding: 0.55rem 1.1rem;
+	font-size: 0.8rem;
 }
 
-::-webkit-scrollbar-thumb {
-    background: var(--lab-border);
-    border-radius: 3px;
+button.primary:hover:not(:disabled) {
+	background: var(--signal);
+	border-color: var(--signal);
+	color: #fff;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: var(--lab-border-hover);
+/* A toggle that is currently on — the board selector. The one place the accent
+   appears on a control that is not the primary action. */
+button.on {
+	border-color: var(--signal);
+	color: var(--signal);
+	background: var(--signal-soft);
+}
+
+/* A fingertip covers about 9 mm of glass; both platform guidelines put the floor at
+   44 px. The rem keeps the control in proportion when the root font-size moves. */
+@media (pointer: coarse) {
+	button,
+	.button-like {
+		min-height: max(2.6rem, 44px);
+		padding: 0.5rem 0.8rem;
+	}
 }

@@ -1,5 +1,20 @@
 {
-  "version": "dev",
-  "image": "lyrebird.bin",
-  "imageOffset": 0
+  "version": "0b54fe3-dirty",
+  "boards": [
+    {
+      "id": "fire",
+      "name": "M5Stack Fire",
+      "chip": "esp32",
+      "chipFamily": "ESP32",
+      "image": "lyrebird-fire.bin",
+      "imageOffset": 0
+    },    {
+      "id": "cores3",
+      "name": "M5Stack CoreS3",
+      "chip": "esp32s3",
+      "chipFamily": "ESP32-S3",
+      "image": "lyrebird-cores3.bin",
+      "imageOffset": 0
+    }
+  ]
 }

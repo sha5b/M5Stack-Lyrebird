@@ -3,7 +3,8 @@ export const SITE_NAME = 'Lyrebird';
 export const SITE_TITLE = 'Lyrebird — Flash a Bird Chorus onto an M5Stack Fire';
 export const SITE_DESCRIPTION =
     'A birdsong synthesizer for the M5Stack Fire. Twelve songbird species rendered in ' +
-    'real time by a physical model of the avian syrinx — no samples, no SD card. ' +
+    'real time by a physical model of the avian syrinx — no samples, no SD card. It ' +
+    'boots into all twelve at once and steps down to one species at a time. ' +
     'Plug the device in and flash it from the browser.';
 
 export const SITE_KEYWORDS =
@@ -18,9 +19,12 @@ export const ARTIST = {
     sameAs: ['https://github.com/sha5b']
 };
 
+// The browser instrument this firmware is a port of. The link goes to the live site
+// rather than the repository — that is where the work is, and this page borrows its
+// ground (see app.css). REPO_URL below is this project's own source.
 export const PARENT_PROJECT = {
-    name: 'Lyrebird',
-    url: 'https://github.com/sha5b/Lyrebird'
+    name: 'Lyrebird for the browser',
+    url: 'https://lyrebird.variable.gallery'
 };
 
 export const REPO_URL = 'https://github.com/sha5b/M5Stack-Lyrebird';

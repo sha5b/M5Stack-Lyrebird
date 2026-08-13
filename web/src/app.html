@@ -7,10 +7,19 @@
 		<link rel="icon" type="image/x-icon" href="%sveltekit.assets%/favicon.ico" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="theme-color" content="#030508" />
-		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#fafbfc" />
+		<meta name="color-scheme" content="light" />
 		<meta name="author" content="sha5b" />
 		<meta name="robots" content="index, follow, max-image-preview:large" />
+
+		<!-- The parent project's pairing: Plex Sans for prose and controls, Plex Mono for
+		     every figure, id and log line. Both fall back to the system stack. -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+			rel="stylesheet"
+		/>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
