@@ -1,0 +1,935 @@
+{
+  "version": 1,
+  "note": "Canonical Lyrebird inventory. Single source of truth for the offline Python pipeline (corpus rendering, galaxy) and the browser syrinx engine. Contours are [timeFraction, Hz]. Functions marked confidence=experimental are backed by playback experiments; documented = described in the literature; inferred = plausible but not experimentally established.",
+  "refs": {
+    "suzuki2016": "Suzuki TN, Wheatcroft D, Griesser M (2016) Experimental evidence for compositional syntax in bird calls. Nature Communications 7:10986.",
+    "suzuki2014": "Suzuki TN (2014) Communication about predator type by a bird using discrete, graded and combinatorial variation in alarm calls. Animal Behaviour 87:59-65.",
+    "freeberg2003": "Freeberg TM, Lucas JR (2002/2003) Receivers respond differently to chick-a-dee calls varying in note composition. Animal Behaviour.",
+    "griesser2008": "Griesser M (2008) Referential calls signal predator behavior in a group-living bird species. Current Biology 18:69-73.",
+    "okanoya2004": "Okanoya K (2004) The Bengalese finch: a window on the behavioral neurobiology of birdsong syntax. Ann NY Acad Sci 1016:724-735.",
+    "elie2018": "Elie JE, Theunissen FE (2018) Zebra finches identify individuals using vocal signatures unique to each call type. Nature Communications 9:4026.",
+    "hultsch1989": "Hultsch H, Todt D (1989) Memorization and reproduction of song packages in nightingales. Bioacoustics 1:197-212.",
+    "galeotti1991": "Galeotti P, Pavan G (1991) Individual recognition of male Tawny owls (Strix aluco) using spectrograms of their territorial calls. Ethology Ecology & Evolution 3:113-126.",
+    "amador2013": "Amador A, Perl YS, Mindlin GB, Margoliash D (2013) Elemental gesture dynamics are encoded by song premotor cortical neurons. Nature 495:59-64.",
+    "amador2021": "Amador A, Mindlin GB (2021) Low dimensional dynamics in birdsong production. Frontiers in Neuroscience 15.",
+    "beckers2003": "Beckers GJL, Suthers RA, ten Cate C (2003) Pure-tone birdsong by resonance filtering of harmonic overtones. PNAS 100:7372-7376.",
+    "rutz2023": "Rutz C et al. (2023) Using machine learning to decode animal communication. Science 381:152-155."
+  },
+  "banks": {
+    "jp": "Japan / East Asia",
+    "east": "Eurasia",
+    "west": "Europe / North America",
+    "lab": "Laboratory model species"
+  },
+  "species": [
+    {
+      "id": "parus_minor",
+      "common": "Japanese great tit",
+      "scientific": "Parus minor",
+      "bank": "jp",
+      "summary": "Strongest evidence for word-order rules in birds: ABC = scan for danger, D = approach, ABC-D is a compound with a distinct behavioural response; the reversed order D-ABC elicits nothing.",
+      "syllables": [
+        {
+          "id": "A",
+          "label": "A note",
+          "function": "component of the ABC alarm cluster (snake/predator vigilance)",
+          "confidence": "experimental",
+          "refs": ["suzuki2016", "suzuki2014"],
+          "dur": 0.09,
+          "level": 0.85,
+          "timbre": "pure",
+          "attack": 0.006,
+          "contour": [[0.0, 4200], [0.35, 5600], [1.0, 4400]]
+        },
+        {
+          "id": "B",
+          "label": "B note",
+          "function": "component of the ABC alarm cluster",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "dur": 0.08,
+          "level": 0.8,
+          "timbre": "pure",
+          "attack": 0.005,
+          "contour": [[0.0, 5200], [0.5, 4300], [1.0, 5000]]
+        },
+        {
+          "id": "C",
+          "label": "C note",
+          "function": "component of the ABC alarm cluster",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "dur": 0.1,
+          "level": 0.82,
+          "timbre": "reed",
+          "harmonic": 0.25,
+          "contour": [[0.0, 3600], [0.6, 4900], [1.0, 3800]]
+        },
+        {
+          "id": "D",
+          "label": "D note",
+          "function": "recruitment / approach the caller",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "dur": 0.14,
+          "level": 0.95,
+          "timbre": "buzz",
+          "am": 95,
+          "amDepth": 0.55,
+          "harmonic": 0.4,
+          "contour": [[0.0, 3000], [0.5, 3200], [1.0, 2600]]
+        },
+        {
+          "id": "jar",
+          "label": "jar note",
+          "function": "mobbing / general agitation",
+          "confidence": "documented",
+          "refs": ["suzuki2014"],
+          "dur": 0.18,
+          "level": 0.9,
+          "timbre": "buzz",
+          "am": 60,
+          "amDepth": 0.7,
+          "harmonic": 0.55,
+          "contour": [[0.0, 2400], [0.5, 2800], [1.0, 2200]]
+        },
+        {
+          "id": "tsupi",
+          "label": "tsu-pi song note",
+          "function": "territorial song element",
+          "confidence": "documented",
+          "refs": ["suzuki2014"],
+          "dur": 0.13,
+          "level": 0.9,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 4600], [0.25, 5200], [0.5, 3500], [1.0, 3300]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "abc",
+          "label": "ABC",
+          "gloss": "scan for danger",
+          "function": "receivers scan horizontally for a predator",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "sequence": ["A", "B", "C"],
+          "gaps": [0.05, 0.05]
+        },
+        {
+          "id": "d",
+          "label": "D",
+          "gloss": "come here",
+          "function": "receivers approach the caller",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "sequence": ["D", "D"],
+          "gaps": [0.07]
+        },
+        {
+          "id": "abc_d",
+          "label": "ABC-D",
+          "gloss": "scan for danger, then come here",
+          "function": "compound message; elicits both responses, more than the sum of its parts",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "sequence": ["A", "B", "C", "D"],
+          "gaps": [0.05, 0.05, 0.11]
+        },
+        {
+          "id": "d_abc",
+          "label": "D-ABC (reversed)",
+          "gloss": "ungrammatical",
+          "function": "artificially reversed order; in playback experiments it elicits neither response",
+          "confidence": "experimental",
+          "refs": ["suzuki2016"],
+          "sequence": ["D", "A", "B", "C"],
+          "gaps": [0.11, 0.05, 0.05]
+        },
+        {
+          "id": "tsupi_song",
+          "label": "tsu-pi tsu-pi",
+          "gloss": "this is my territory",
+          "function": "advertising song",
+          "confidence": "documented",
+          "refs": ["suzuki2014"],
+          "sequence": ["tsupi", "tsupi", "tsupi"],
+          "gaps": [0.12, 0.12]
+        }
+      ]
+    },
+    {
+      "id": "poecile_atricapillus",
+      "common": "Black-capped chickadee",
+      "scientific": "Poecile atricapillus",
+      "bank": "west",
+      "summary": "chick-a-dee call: four note types in strict A-B-C-D order; the number of D notes scales with threat, and note composition changes receiver behaviour.",
+      "syllables": [
+        {
+          "id": "chickA",
+          "label": "A note",
+          "function": "call-opening note; carries flock identity",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "dur": 0.07,
+          "level": 0.8,
+          "timbre": "pure",
+          "attack": 0.004,
+          "contour": [[0.0, 3400], [0.4, 3900], [1.0, 3200]]
+        },
+        {
+          "id": "chickB",
+          "label": "B note",
+          "function": "transition note",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "dur": 0.06,
+          "level": 0.75,
+          "timbre": "pure",
+          "contour": [[0.0, 3100], [1.0, 2700]]
+        },
+        {
+          "id": "chickC",
+          "label": "C note",
+          "function": "transition note",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "dur": 0.08,
+          "level": 0.8,
+          "timbre": "reed",
+          "harmonic": 0.3,
+          "contour": [[0.0, 2600], [0.5, 2900], [1.0, 2400]]
+        },
+        {
+          "id": "chickD",
+          "label": "D note",
+          "function": "harmonically rich terminal note; count scales with predator threat",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "dur": 0.12,
+          "level": 0.95,
+          "timbre": "buzz",
+          "am": 55,
+          "amDepth": 0.6,
+          "harmonic": 0.6,
+          "contour": [[0.0, 2000], [0.5, 2100], [1.0, 1900]]
+        },
+        {
+          "id": "feebee",
+          "label": "fee-bee",
+          "function": "male territorial song, two pure whistles a tone apart",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "dur": 0.5,
+          "level": 0.9,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 4200], [0.34, 4150], [0.4, 3450], [1.0, 3400]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "chick_a_dee",
+          "label": "chick-a-dee",
+          "gloss": "flock contact",
+          "function": "cohesion call, mild alarm",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "sequence": ["chickA", "chickB", "chickD", "chickD"],
+          "gaps": [0.04, 0.05, 0.06]
+        },
+        {
+          "id": "chick_a_dee_alarm",
+          "label": "chick-a-dee-dee-dee-dee",
+          "gloss": "high threat",
+          "function": "extra D notes signal a more dangerous predator",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "sequence": ["chickA", "chickB", "chickC", "chickD", "chickD", "chickD", "chickD"],
+          "gaps": [0.04, 0.04, 0.05, 0.06, 0.06, 0.06]
+        },
+        {
+          "id": "feebee_song",
+          "label": "fee-bee",
+          "gloss": "territory / mate attraction",
+          "function": "advertising song",
+          "confidence": "documented",
+          "refs": ["freeberg2003"],
+          "sequence": ["feebee"],
+          "gaps": []
+        }
+      ]
+    },
+    {
+      "id": "perisoreus_infaustus",
+      "common": "Siberian jay",
+      "scientific": "Perisoreus infaustus",
+      "bank": "east",
+      "summary": "Alarm calls encode what the predator is doing (perched, searching, attacking), and each elicits a different escape response.",
+      "syllables": [
+        {
+          "id": "hawkPerched",
+          "label": "perched-hawk call",
+          "function": "a hawk is sitting nearby; receivers stay put and watch",
+          "confidence": "experimental",
+          "refs": ["griesser2008"],
+          "dur": 0.22,
+          "level": 0.85,
+          "timbre": "reed",
+          "harmonic": 0.35,
+          "contour": [[0.0, 2200], [0.5, 2450], [1.0, 2150]]
+        },
+        {
+          "id": "hawkSearching",
+          "label": "searching-hawk call",
+          "function": "a hawk is hunting in the area; receivers flee to cover",
+          "confidence": "experimental",
+          "refs": ["griesser2008"],
+          "dur": 0.16,
+          "level": 0.9,
+          "timbre": "buzz",
+          "am": 38,
+          "amDepth": 0.5,
+          "harmonic": 0.45,
+          "contour": [[0.0, 2600], [0.4, 3400], [1.0, 2500]]
+        },
+        {
+          "id": "hawkAttacking",
+          "label": "attacking-hawk call",
+          "function": "attack in progress; receivers dive into dense cover",
+          "confidence": "experimental",
+          "refs": ["griesser2008"],
+          "dur": 0.11,
+          "level": 1.0,
+          "timbre": "buzz",
+          "am": 120,
+          "amDepth": 0.8,
+          "harmonic": 0.7,
+          "contour": [[0.0, 4200], [0.3, 5200], [1.0, 3000]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "jay_perched",
+          "label": "perched-hawk series",
+          "gloss": "a hawk is watching",
+          "function": "vigilance, no flight",
+          "confidence": "experimental",
+          "refs": ["griesser2008"],
+          "sequence": ["hawkPerched", "hawkPerched"],
+          "gaps": [0.3]
+        },
+        {
+          "id": "jay_attack",
+          "label": "attack series",
+          "gloss": "attack, take cover now",
+          "function": "immediate escape",
+          "confidence": "experimental",
+          "refs": ["griesser2008"],
+          "sequence": ["hawkAttacking", "hawkAttacking", "hawkAttacking", "hawkAttacking"],
+          "gaps": [0.07, 0.07, 0.07]
+        }
+      ]
+    },
+    {
+      "id": "lonchura_striata",
+      "common": "Bengalese finch",
+      "scientific": "Lonchura striata domestica",
+      "bank": "lab",
+      "summary": "Song follows a finite-state syntax with chunks and loops; females prefer syntactically complex song. Used here as the grammar engine for word rendering.",
+      "syllables": [
+        {
+          "id": "a",
+          "label": "syllable a",
+          "function": "song element (no referential meaning; song syntax only)",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.07,
+          "level": 0.85,
+          "timbre": "reed",
+          "harmonic": 0.4,
+          "two": true,
+          "contour": [[0.0, 1800], [0.4, 3200], [1.0, 2400]]
+        },
+        {
+          "id": "b",
+          "label": "syllable b",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.05,
+          "level": 0.8,
+          "timbre": "buzz",
+          "am": 140,
+          "amDepth": 0.6,
+          "contour": [[0.0, 3800], [1.0, 2600]]
+        },
+        {
+          "id": "c",
+          "label": "syllable c",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.09,
+          "level": 0.9,
+          "timbre": "pure",
+          "contour": [[0.0, 2600], [0.3, 5200], [0.7, 4600], [1.0, 5400]]
+        },
+        {
+          "id": "d",
+          "label": "syllable d",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.06,
+          "level": 0.82,
+          "timbre": "reed",
+          "harmonic": 0.5,
+          "contour": [[0.0, 4400], [0.5, 3100], [1.0, 3600]]
+        },
+        {
+          "id": "e",
+          "label": "syllable e",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.11,
+          "level": 0.88,
+          "timbre": "buzz",
+          "am": 70,
+          "amDepth": 0.45,
+          "harmonic": 0.35,
+          "contour": [[0.0, 1600], [0.5, 2200], [1.0, 1500]]
+        },
+        {
+          "id": "f",
+          "label": "syllable f",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "dur": 0.08,
+          "level": 0.86,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 6200], [0.4, 7200], [1.0, 5200]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "bf_motif",
+          "label": "typical motif",
+          "gloss": "song bout",
+          "function": "courtship / undirected song",
+          "confidence": "documented",
+          "refs": ["okanoya2004"],
+          "sequence": ["a", "b", "b", "c", "d", "e", "f", "c"],
+          "gaps": [0.03, 0.03, 0.04, 0.03, 0.04, 0.03, 0.04]
+        }
+      ],
+      "grammar": {
+        "start": ["a", "c"],
+        "transitions": {
+          "a": { "b": 0.6, "c": 0.3, "d": 0.1 },
+          "b": { "b": 0.35, "c": 0.4, "d": 0.25 },
+          "c": { "d": 0.45, "e": 0.3, "f": 0.25 },
+          "d": { "e": 0.4, "a": 0.25, "f": 0.35 },
+          "e": { "f": 0.5, "a": 0.3, "c": 0.2 },
+          "f": { "c": 0.4, "a": 0.35, "end": 0.25 }
+        }
+      }
+    },
+    {
+      "id": "taeniopygia_guttata",
+      "common": "Zebra finch",
+      "scientific": "Taeniopygia guttata",
+      "bank": "lab",
+      "summary": "Linear stereotyped motif preceded by introductory notes; the main semantic layer is individual identity, which is recoverable from single calls.",
+      "syllables": [
+        {
+          "id": "intro",
+          "label": "introductory note",
+          "function": "song onset marker",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "dur": 0.045,
+          "level": 0.6,
+          "timbre": "reed",
+          "harmonic": 0.5,
+          "contour": [[0.0, 1000], [1.0, 900]]
+        },
+        {
+          "id": "zf1",
+          "label": "motif note 1",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "dur": 0.09,
+          "level": 0.9,
+          "timbre": "buzz",
+          "am": 45,
+          "amDepth": 0.55,
+          "harmonic": 0.6,
+          "contour": [[0.0, 700], [0.4, 1400], [1.0, 900]]
+        },
+        {
+          "id": "zf2",
+          "label": "motif note 2",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "dur": 0.07,
+          "level": 0.88,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 3200], [0.5, 4600], [1.0, 3000]]
+        },
+        {
+          "id": "zf3",
+          "label": "motif note 3",
+          "function": "song element",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "dur": 0.12,
+          "level": 0.92,
+          "timbre": "reed",
+          "harmonic": 0.45,
+          "contour": [[0.0, 2400], [0.3, 1800], [0.6, 2600], [1.0, 1600]]
+        },
+        {
+          "id": "distance",
+          "label": "distance call",
+          "function": "long-range contact; carries a strong individual signature",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "dur": 0.16,
+          "level": 0.95,
+          "timbre": "reed",
+          "harmonic": 0.65,
+          "two": true,
+          "contour": [[0.0, 550], [0.2, 900], [0.7, 800], [1.0, 620]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "zf_song",
+          "label": "intro + motif",
+          "gloss": "directed song",
+          "function": "courtship",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "sequence": ["intro", "intro", "intro", "zf1", "zf2", "zf3", "zf1", "zf2", "zf3"],
+          "gaps": [0.05, 0.05, 0.06, 0.03, 0.03, 0.05, 0.03, 0.03]
+        },
+        {
+          "id": "zf_distance",
+          "label": "distance call",
+          "gloss": "where are you?",
+          "function": "contact",
+          "confidence": "documented",
+          "refs": ["elie2018"],
+          "sequence": ["distance"],
+          "gaps": []
+        }
+      ]
+    },
+    {
+      "id": "horornis_diphone",
+      "common": "Japanese bush warbler (uguisu)",
+      "scientific": "Horornis diphone",
+      "bank": "jp",
+      "summary": "A long drawn whistle followed by an explosive flourish - the classic ho-hoke-kyo of Japanese spring.",
+      "syllables": [
+        {
+          "id": "ho",
+          "label": "ho (long whistle)",
+          "function": "song introduction",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.9,
+          "level": 0.8,
+          "timbre": "pure",
+          "attack": 0.09,
+          "hold": true,
+          "contour": [[0.0, 2050], [0.6, 2120], [1.0, 2080]]
+        },
+        {
+          "id": "ho2",
+          "label": "hoke",
+          "function": "song flourish, part 1",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.12,
+          "level": 0.95,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 2400], [0.3, 4200], [1.0, 3200]]
+        },
+        {
+          "id": "kyo",
+          "label": "kyo",
+          "function": "song flourish, part 2",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.2,
+          "level": 1.0,
+          "timbre": "reed",
+          "harmonic": 0.3,
+          "contour": [[0.0, 3600], [0.25, 2600], [0.6, 3400], [1.0, 2200]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "hokekyo",
+          "label": "ho-hoke-kyo",
+          "gloss": "spring territorial song",
+          "function": "territory advertisement",
+          "confidence": "inferred",
+          "refs": [],
+          "sequence": ["ho", "ho2", "kyo"],
+          "gaps": [0.16, 0.03]
+        }
+      ]
+    },
+    {
+      "id": "turdus_merula",
+      "common": "Common blackbird",
+      "scientific": "Turdus merula",
+      "bank": "west",
+      "summary": "Low, flute-like phrases followed by a high scratchy twitter; the pure tone comes from vocal-tract resonance tracking the fundamental.",
+      "syllables": [
+        {
+          "id": "flute1",
+          "label": "flute phrase",
+          "function": "song element",
+          "confidence": "inferred",
+          "refs": ["beckers2003"],
+          "dur": 0.28,
+          "level": 0.9,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 1500], [0.2, 2100], [0.5, 1750], [0.8, 2300], [1.0, 1900]]
+        },
+        {
+          "id": "flute2",
+          "label": "flute phrase 2",
+          "function": "song element",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.3,
+          "level": 0.88,
+          "timbre": "pure",
+          "contour": [[0.0, 2200], [0.3, 1600], [0.7, 2000], [1.0, 1400]]
+        },
+        {
+          "id": "twitter",
+          "label": "terminal twitter",
+          "function": "phrase ending",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.22,
+          "level": 0.6,
+          "timbre": "buzz",
+          "am": 45,
+          "amDepth": 0.5,
+          "harmonic": 0.4,
+          "contour": [[0.0, 4200], [0.4, 5600], [0.7, 4800], [1.0, 6200]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "merula_song",
+          "label": "flute + twitter",
+          "gloss": "territorial song",
+          "function": "territory / mate attraction",
+          "confidence": "inferred",
+          "refs": [],
+          "sequence": ["flute1", "flute2", "twitter"],
+          "gaps": [0.08, 0.05]
+        }
+      ]
+    },
+    {
+      "id": "luscinia_megarhynchos",
+      "common": "Common nightingale",
+      "scientific": "Luscinia megarhynchos",
+      "bank": "west",
+      "summary": "180-200 song types per male, organised into packages; countersinging males match and overlap each other by rule.",
+      "syllables": [
+        {
+          "id": "whistleCrescendo",
+          "label": "crescendo whistle",
+          "function": "song-type opening, delivered in packages",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "dur": 0.34,
+          "level": 0.95,
+          "timbre": "pure",
+          "attack": 0.05,
+          "contour": [[0.0, 1650], [0.5, 1700], [1.0, 1750]]
+        },
+        {
+          "id": "sobTrill",
+          "label": "sob trill",
+          "function": "high-repetition-rate trill element",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "dur": 0.4,
+          "level": 0.9,
+          "timbre": "buzz",
+          "am": 22,
+          "amDepth": 0.9,
+          "contour": [[0.0, 2600], [0.5, 3000], [1.0, 2500]]
+        },
+        {
+          "id": "jugJug",
+          "label": "jug-jug",
+          "function": "loud percussive element",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "dur": 0.14,
+          "level": 1.0,
+          "timbre": "reed",
+          "harmonic": 0.6,
+          "contour": [[0.0, 900], [0.4, 1500], [1.0, 1000]]
+        },
+        {
+          "id": "flourish",
+          "label": "rising flourish",
+          "function": "song-type closing",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "dur": 0.26,
+          "level": 0.92,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 2200], [0.3, 3600], [0.6, 3000], [1.0, 4800]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "nightingale_type_a",
+          "label": "song type A",
+          "gloss": "one of ~200 song types",
+          "function": "mate attraction / countersinging",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "sequence": ["whistleCrescendo", "whistleCrescendo", "sobTrill", "flourish"],
+          "gaps": [0.2, 0.18, 0.06]
+        },
+        {
+          "id": "nightingale_type_b",
+          "label": "song type B",
+          "gloss": "one of ~200 song types",
+          "function": "mate attraction / countersinging",
+          "confidence": "documented",
+          "refs": ["hultsch1989"],
+          "sequence": ["jugJug", "jugJug", "jugJug", "sobTrill"],
+          "gaps": [0.07, 0.07, 0.1]
+        }
+      ]
+    },
+    {
+      "id": "troglodytes_troglodytes",
+      "common": "Eurasian wren",
+      "scientific": "Troglodytes troglodytes",
+      "bank": "west",
+      "summary": "Extremely loud, fast trill from a tiny bird; trills are amplitude modulation gated by the respiratory cycle.",
+      "syllables": [
+        {
+          "id": "wrenTrill",
+          "label": "machine-gun trill",
+          "function": "territorial song core",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.55,
+          "level": 1.0,
+          "timbre": "buzz",
+          "am": 28,
+          "amDepth": 0.95,
+          "contour": [[0.0, 4200], [0.3, 6400], [0.6, 5000], [1.0, 5800]]
+        },
+        {
+          "id": "wrenChip",
+          "label": "chip",
+          "function": "contact / scold note",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.05,
+          "level": 0.9,
+          "timbre": "buzz",
+          "am": 180,
+          "amDepth": 0.7,
+          "contour": [[0.0, 5200], [1.0, 3600]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "wren_song",
+          "label": "wren song",
+          "gloss": "territorial song",
+          "function": "territory advertisement",
+          "confidence": "inferred",
+          "refs": [],
+          "sequence": ["wrenChip", "wrenChip", "wrenTrill"],
+          "gaps": [0.05, 0.06]
+        }
+      ]
+    },
+    {
+      "id": "cuculus_canorus",
+      "common": "Common cuckoo",
+      "scientific": "Cuculus canorus",
+      "bank": "east",
+      "summary": "Two-note male advertisement call, close to a pure tone with a fixed falling interval.",
+      "syllables": [
+        {
+          "id": "cuck",
+          "label": "cuc",
+          "function": "advertisement call, note 1",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.17,
+          "level": 0.9,
+          "timbre": "pure",
+          "attack": 0.02,
+          "hold": true,
+          "contour": [[0.0, 700], [1.0, 690]]
+        },
+        {
+          "id": "oo",
+          "label": "koo",
+          "function": "advertisement call, note 2",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.24,
+          "level": 0.8,
+          "timbre": "pure",
+          "attack": 0.03,
+          "hold": true,
+          "contour": [[0.0, 555], [1.0, 545]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "cuckoo_call",
+          "label": "cuc-koo",
+          "gloss": "I am here, this is my area",
+          "function": "male advertisement",
+          "confidence": "inferred",
+          "refs": [],
+          "sequence": ["cuck", "oo"],
+          "gaps": [0.06]
+        }
+      ]
+    },
+    {
+      "id": "strix_aluco",
+      "common": "Tawny owl",
+      "scientific": "Strix aluco",
+      "bank": "east",
+      "summary": "Territorial hoot tuned to measured calls: a short first note, a pause, then a long quavering note whose vibrato identifies the individual.",
+      "syllables": [
+        {
+          "id": "hooFirst",
+          "label": "first hoot",
+          "function": "territorial call, note 1",
+          "confidence": "documented",
+          "refs": ["galeotti1991"],
+          "dur": 0.3,
+          "level": 0.85,
+          "timbre": "pure",
+          "attack": 0.05,
+          "hold": true,
+          "harmonic": 0.15,
+          "contour": [[0.0, 520], [0.4, 540], [1.0, 500]]
+        },
+        {
+          "id": "hooLong",
+          "label": "quavering hoot",
+          "function": "territorial call, note 2; vibrato pattern is individually distinctive",
+          "confidence": "documented",
+          "refs": ["galeotti1991"],
+          "dur": 0.95,
+          "level": 0.95,
+          "timbre": "pure",
+          "attack": 0.06,
+          "hold": true,
+          "harmonic": 0.2,
+          "vib": { "rate": 11, "depth": 0.035 },
+          "contour": [[0.0, 470], [0.15, 560], [0.7, 530], [1.0, 450]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "owl_hoot",
+          "label": "hoo ... hu-hooooo",
+          "gloss": "this territory is occupied",
+          "function": "territorial advertisement",
+          "confidence": "documented",
+          "refs": ["galeotti1991"],
+          "sequence": ["hooFirst", "hooLong"],
+          "gaps": [0.55]
+        }
+      ]
+    },
+    {
+      "id": "zosterops_japonicus",
+      "common": "Japanese white-eye (mejiro)",
+      "scientific": "Zosterops japonicus",
+      "bank": "jp",
+      "summary": "Busy high warble with rapid up-down sweeps; used here as a fast, dense warbler voice.",
+      "syllables": [
+        {
+          "id": "warbleUp",
+          "label": "rising warble",
+          "function": "song element",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.1,
+          "level": 0.85,
+          "timbre": "pure",
+          "two": true,
+          "contour": [[0.0, 2800], [0.5, 4400], [1.0, 3600]]
+        },
+        {
+          "id": "warbleDown",
+          "label": "falling warble",
+          "function": "song element",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.09,
+          "level": 0.82,
+          "timbre": "reed",
+          "harmonic": 0.3,
+          "contour": [[0.0, 4600], [0.4, 3200], [1.0, 3800]]
+        },
+        {
+          "id": "mejiroChirr",
+          "label": "chirr",
+          "function": "contact note",
+          "confidence": "inferred",
+          "refs": [],
+          "dur": 0.07,
+          "level": 0.75,
+          "timbre": "buzz",
+          "am": 130,
+          "amDepth": 0.6,
+          "contour": [[0.0, 3400], [1.0, 2900]]
+        }
+      ],
+      "songs": [
+        {
+          "id": "mejiro_song",
+          "label": "mejiro warble",
+          "gloss": "song",
+          "function": "territory / pair contact",
+          "confidence": "inferred",
+          "refs": [],
+          "sequence": ["warbleUp", "warbleDown", "warbleUp", "mejiroChirr", "warbleDown"],
+          "gaps": [0.04, 0.04, 0.05, 0.04]
+        }
+      ]
+    }
+  ]
+}

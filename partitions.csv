@@ -1,0 +1,6 @@
+# Name,     Type, SubType,  Offset,    Size,      Flags
+# Factory-only, no OTA. Bird data is compiled into the app (PROGMEM), so no
+# data partitions are needed. Fire has 16 MB flash; 3 MB app is generous.
+nvs,        data, nvs,      0x9000,    0x5000,
+phy_init,   data, phy,      0xE000,    0x1000,
+factory,    app,  factory,  0x10000,   0x300000,

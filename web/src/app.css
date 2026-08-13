@@ -1,0 +1,132 @@
+/* Global Styles — Wayland Industries Lab Aesthetic */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    /* Core palette */
+    --lab-bg: #030508;
+    --lab-surface: #0a0e14;
+    --lab-surface-hover: #0f1520;
+    --lab-surface-elevated: #111923;
+    --lab-text-primary: rgba(240, 245, 255, 0.92);
+    --lab-text-secondary: rgba(160, 175, 200, 0.55);
+    --lab-text-tertiary: rgba(120, 140, 170, 0.35);
+    --lab-border: rgba(255, 255, 255, 0.06);
+    --lab-border-hover: rgba(255, 255, 255, 0.12);
+    --lab-accent: #4fd1c5;
+    --lab-accent-dim: rgba(79, 209, 197, 0.15);
+    --lab-accent-glow: rgba(79, 209, 197, 0.08);
+    --lab-danger: #f56565;
+    --lab-glass: rgba(10, 14, 20, 0.75);
+    --lab-glass-border: rgba(255, 255, 255, 0.04);
+
+    /* Typography */
+    --font-main: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Spacing */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2.5rem;
+
+    /* Transitions */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --transition-fast: 150ms var(--ease-out);
+    --transition-normal: 250ms var(--ease-out);
+    --transition-slow: 400ms var(--ease-out);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--lab-bg);
+    color: var(--lab-text-primary);
+    font-family: var(--font-main);
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-y: auto;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+}
+
+* {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+/* Links */
+a {
+    color: var(--lab-accent);
+    text-decoration: none;
+    transition: color var(--transition-fast), opacity var(--transition-fast);
+}
+
+a:hover {
+    color: var(--lab-text-primary);
+}
+
+/* Buttons */
+button,
+input[type="button"],
+input[type="submit"],
+.button-like {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--lab-border);
+    border-radius: 6px;
+    background: var(--lab-surface);
+    color: var(--lab-text-primary);
+    font-family: var(--font-main);
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    text-align: center;
+    transition: all var(--transition-fast);
+    backdrop-filter: blur(8px);
+}
+
+button:hover,
+input[type="button"]:hover,
+input[type="submit"]:hover,
+.button-like:hover {
+    background: var(--lab-surface-hover);
+    border-color: var(--lab-border-hover);
+    color: var(--lab-text-primary);
+}
+
+button:active {
+    transform: scale(0.97);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--lab-border);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--lab-border-hover);
+}

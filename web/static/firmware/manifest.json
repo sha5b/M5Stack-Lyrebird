@@ -1,0 +1,11 @@
+{
+  "name": "Lyrebird — M5Stack Fire",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [{ "path": "lyrebird.bin", "offset": 0 }]
+    }
+  ]
+}
