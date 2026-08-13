@@ -160,8 +160,11 @@ include/, src/            firmware: syrinx synth, chorus, UI, the band both boar
 scripts/build-firmware.sh merged 0x0 image + manifest into web/static/firmware/
 web/                      SvelteKit + esptool-js webflasher (from CYD-Physarum)
 web/src/lib/galaxy.ts     the page's backdrop: the corpus as a point cloud
-web/src/lib/seo/          title, card, JSON-LD graph; robots.txt, sitemap.xml and
-                          llms.txt sit in web/static/ beside the icons
+web/src/lib/seo/          title, card, JSON-LD graph, og:video; robots.txt,
+                          sitemap.xml and llms.txt sit in web/static/ beside the icons
+web/static/lyrebird-boards.mp4
+                          28 s of both boards running, with sound — plus its poster
+                          and a caption track. The page's hero and this file's
 docs/band-preview.png     what the band looks like, from preview_galaxy.py
 ```
 
