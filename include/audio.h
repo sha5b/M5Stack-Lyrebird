@@ -1,8 +1,14 @@
-// Audio output for the M5Stack Fire: I2S0 in built-in DAC mode, DMA-paced.
-// The Fire's speaker amp (NS4168) hangs off DAC1 = GPIO25, which the I2S
-// peripheral drives as its "left" built-in DAC channel. DMA pacing gives a
-// clean 22.05 kHz clock — a delayMicroseconds bit-bang loop jitters, which a
-// pitched synth hears immediately.
+// One audio API, one backend per board: src/audio_dac.cpp on the Fire and
+// src/audio_spk.cpp on the CoreS3, selected by build_src_filter. The comments
+// below describe the Fire, which is where all the difficulty is.
+//
+// Fire: I2S0 in built-in DAC mode, DMA-paced. Its speaker amp is analog-in off
+// DAC1 = GPIO25, which the I2S peripheral drives as its "left" built-in DAC
+// channel. DMA pacing gives a clean 22.05 kHz clock — a delayMicroseconds
+// bit-bang loop jitters, which a pitched synth hears immediately.
+//
+// CoreS3: no DAC on an ESP32-S3, so none of the 8-bit machinery here applies.
+// 16-bit PCM goes into M5.Speaker, which owns the AW88298 bring-up.
 #pragma once
 
 #include <stdint.h>
@@ -25,8 +31,8 @@
  */
 #define AUDIO_SAMPLE_RATE 22050
 
-void audioInit();              // installs the I2S driver, starts the render task on core 1
-void audioSetRunning(bool on); // false: DAC disabled + GPIO25 high-Z (no idle hum)
+void audioInit();              // starts the render task on core 1
+void audioSetRunning(bool on); // false: output silenced (Fire: DAC disabled, GPIO25 high-Z)
 void audioSetVolume(float v);  // 0..1
 float audioGetVolume();
 

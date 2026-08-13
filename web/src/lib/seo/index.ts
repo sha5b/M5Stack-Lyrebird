@@ -1,11 +1,15 @@
+// TODO: this is the *parent* project's URL — the same one PARENT_PROJECT.url points at
+// below — so the canonical link, og:url and the JSON-LD @id all currently claim to be the
+// browser instrument. Replace with this site's own URL once the deploy exists.
 export const SITE_URL = 'https://lyrebird.variable.gallery';
 export const SITE_NAME = 'Lyrebird';
-export const SITE_TITLE = 'Lyrebird — Flash a Bird Chorus onto an M5Stack Fire';
+export const SITE_TITLE = 'Lyrebird — Flash a Bird Chorus onto an M5Stack Fire or CoreS3';
 export const SITE_DESCRIPTION =
-    'A birdsong synthesizer for the M5Stack Fire. Twelve songbird species rendered in ' +
-    'real time by a physical model of the avian syrinx — no samples, no SD card. It ' +
-    'boots into all twelve at once and steps down to one species at a time. ' +
-    'Plug the device in and flash it from the browser.';
+    'A birdsong synthesizer for the M5Stack Fire and CoreS3. 2423 songbird species ' +
+    'rendered in real time by a physical model of the avian syrinx — no samples, no SD ' +
+    'card. It boots into a dawn chorus that rolls through the corpus twelve species at a ' +
+    'time, and steps down to one species alone. Plug the device in and flash it from ' +
+    'the browser.';
 
 export const SITE_KEYWORDS =
     'lyrebird, birdsong, syrinx, birdsong synthesis, m5stack, m5stack fire, ESP32, ' +
@@ -28,10 +32,6 @@ export const PARENT_PROJECT = {
 };
 
 export const REPO_URL = 'https://github.com/sha5b/M5Stack-Lyrebird';
-
-export const OG_IMAGE = `${SITE_URL}/og.jpg`;
-export const OG_IMAGE_ALT =
-    'An M5Stack Fire on a desk, its screen reading LYREBIRD with the name of a songbird species.';
 
 export function jsonLd(): string {
     return JSON.stringify({

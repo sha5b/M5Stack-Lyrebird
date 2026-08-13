@@ -40,3 +40,13 @@ bool chorusEnabled();
 
 // Number of individuals currently in the roster, for the display.
 int chorusRosterSize();
+
+// Which species the roster bird carrying this tag belongs to, or -1 if the tag
+// is not in the roster. For the display: the sweep colours a voice by its tag,
+// and the galaxy band has to find that voice's island as well.
+//
+// The answer can be stale by one bird. A song player holds a *copy* of its bird,
+// and rollRoster() can replace a roster entry while that copy is still singing —
+// it declines to evict a bird that is mid-song, which closes the common case and
+// not the racy one. The cost is one wrong island for one syllable.
+int chorusSpeciesForTag(uint8_t tag);

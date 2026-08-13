@@ -78,8 +78,12 @@ for m in re.finditer(r"SyllableData (syl_\w+)\[\]\s*=\s*\{(.*?)\n\};", BIRD, re.
             vibRate=float(parts[9].rstrip("f")), vibDepth=float(parts[10].rstrip("f")),
             contour=CONTOURS[parts[12]]))
 
+# The header is generated, so its syllable count is whatever inventory it was
+# built from — 44 for the vendored authored twelve, 12724 for the shipped corpus.
+# Assert only that parsing found something and lost nothing.
+assert SYLLABLES, "no syllables parsed out of include/bird_data.h"
+assert len(SYLLABLES) == len(CONTOURS), (len(SYLLABLES), len(CONTOURS))
 print(f"parsed {len(SYLLABLES)} syllables, {len(CONTOURS)} contours\n")
-assert len(SYLLABLES) == 44, len(SYLLABLES)
 
 fails = []
 
@@ -205,7 +209,7 @@ for syl in SYLLABLES:
         d = abs(inc[i] - env_closed_form(syl, i, envN))
         if d > worst:
             worst, worst_name = d, f"{syl['name']} @ {i}"
-check("max |incremental - closed form| over all 44 syllables",
+check(f"max |incremental - closed form| over all {len(SYLLABLES)} syllables",
       worst < 5e-4, f"{worst:.2e} (worst at {worst_name}); 1 LSB of the 8-bit DAC is 3.9e-3")
 
 

@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { base } from '$app/paths';
+	import { createGalaxy, type GalaxyHandle } from '$lib/galaxy';
 	import {
 		Installer,
 		isSupported,
@@ -27,6 +28,9 @@
 
 	type Stage = 'idle' | 'connecting' | 'ready' | 'flashing' | 'done' | 'error';
 
+	let backdrop: HTMLCanvasElement;
+	let galaxy: GalaxyHandle | null = null;
+
 	let supported = true;
 	let stage: Stage = 'idle';
 	let error = '';
@@ -52,6 +56,7 @@
 
 	onMount(async () => {
 		supported = isSupported();
+		galaxy = createGalaxy(backdrop);
 
 		try {
 			// A cached manifest or image here means flashing stale firmware, so
@@ -63,6 +68,8 @@
 			error = 'The firmware manifest did not load.';
 		}
 	});
+
+	onDestroy(() => galaxy?.destroy());
 
 	function fail(e: unknown, fallback: string) {
 		const message = e instanceof Error ? e.message : String(e);
@@ -262,6 +269,8 @@
 	{@html LD_JSON}
 </svelte:head>
 
+<canvas class="backdrop" bind:this={backdrop} aria-hidden="true"></canvas>
+
 <main>
 	<header>
 		<div class="titleline">
@@ -270,22 +279,23 @@
 		</div>
 		<p class="strap">
 			<span>ESP32 / ESP32-S3</span><b>/</b>
-			<span>12 species · 44 syllables</span><b>/</b>
+			<span>2423 species · 12724 syllables</span><b>/</b>
 			<span>22.05 kHz, synthesized on the board</span><b>/</b>
 			<span>no SD card, no samples</span>
 		</p>
 
 		<p class="lede">
-			A pocket dawn chorus. Twelve songbirds, integrated in real time from the Mindlin–Laje
-			model of the avian vocal organ — the same oscillator as
+			A pocket dawn chorus. Two thousand four hundred songbirds, integrated in real time
+			from the Mindlin–Laje model of the avian vocal organ — the same oscillator as
 			<a href={PARENT_PROJECT.url}>{PARENT_PROJECT.name}</a>, ported to the board. No audio is
 			stored: every note is computed from the two parameters real birds control, air-sac
 			pressure and syringeal tension.
 		</p>
 		<p class="lede">
-			It boots into <b>all birds</b> — all twelve species at once, two individuals of each,
-			arriving as a Poisson process. Step off that with a button and you get one species,
-			alone. Plug a Fire or a CoreS3 in and flash it from this page.
+			It boots into <b>all birds</b> — twelve species at a time, two individuals of each,
+			arriving as a Poisson process, and the twelve turn over every few minutes so the corpus
+			comes past you rather than sitting still. Step off that with a button and you get one
+			species, alone. Plug a Fire or a CoreS3 in and flash it from this page.
 		</p>
 	</header>
 
@@ -311,7 +321,8 @@
 			{:else}
 				<p>
 					A data USB cable, not a charge-only one. The picker is filtered to USB-UART
-					bridges and Espressif devices — the Fire's CP2104 is in the first group, and the
+					bridges and Espressif devices — the Fire's bridge is in the first group (a CP2104
+						on older units, a CH9102 on a v2.7), and the
 					CoreS3 appears as an Espressif device because it programs over the ESP32-S3's own
 					USB rather than a bridge.
 				</p>
@@ -470,8 +481,8 @@
 	<section class="step">
 		<h2><span class="num">05</span> Controls</h2>
 		<p>
-			Three buttons under the screen. A and C step one dial of thirteen positions; B changes
-			how the current position sings. A hold does something else than a press.
+			Three buttons under the screen. A and C step one dial of 2424 positions; B changes how
+			the current position sings. A hold does something else than a press.
 		</p>
 		<p class="note">
 			The CoreS3 has no physical buttons — the same three live on the touch strip in the
@@ -482,8 +493,9 @@
 			<div>
 				<dt>A · C short</dt>
 				<dd>
-					Previous / next position on the dial. Position 1 is <b>all birds</b> — all twelve
-					species at once. Positions 2–13 are one species each, and it wraps.
+					Previous / next position on the dial. Position 1 is <b>all birds</b> — twelve
+					species at a time, rolling. Positions 2–2424 are one species each, and it wraps.
+					One press is one position and there is no search, so the dial is for wandering.
 				</dd>
 			</div>
 			<div>
@@ -495,13 +507,25 @@
 				</dd>
 			</div>
 			<div><dt>A · C hold</dt><dd>Volume down / up, in 2 % steps.</dd></div>
-			<div><dt>B hold</dt><dd>Pause and resume. Paused, the DAC goes high-Z — no idle hiss.</dd></div>
+			<div>
+				<dt>B hold</dt>
+				<dd>Pause and resume. Paused, the Fire's DAC goes high-Z — no idle hiss.</dd>
+			</div>
 		</dl>
 
 		<p class="note">
-			The screen sweeps a spectrogram of what you are hearing: each sounding voice is plotted
-			at its pitch on a log axis from 250 Hz to 10 kHz, coloured by which individual is
-			singing. Syllable contours draw themselves as the notes sound.
+			<b>The screen puts a camera inside the corpus.</b> The two dozen birds currently
+			singing together are a constellation of dim dots, arranged the same way as the
+			cloud turning behind this page; each time one starts a song, a thread of stretched
+			dots grows out of its dot — fat where the note is loud, pinched where it is quiet,
+			with a bead at the note being sung right now. When another bird takes over, the
+			camera swings across to it.
+		</p>
+
+		<p class="note">
+			So the screen answers a different question than a spectrogram would: not what pitch
+			is sounding, but which of the 2423 birds it is, where that bird sits among the rest,
+			and what its song is doing.
 		</p>
 	</section>
 
@@ -524,7 +548,49 @@
 	 * shadow or a blur; a section is separated from the next by a 1 px rule, and the only
 	 * saturated colour is `--signal` on the one live thing per state.
 	 */
+
+	/**
+	 * The corpus, behind everything (see $lib/galaxy). Fixed rather than scrolling,
+	 * because it is the ground the page stands on and not an illustration of any one
+	 * section — the parent project's galaxy does not scroll away either.
+	 *
+	 * The mask is the only reason this is readable: it thins the cloud through the
+	 * middle third, which is exactly where the text column is, and leaves it whole in
+	 * the margins. Everything else about keeping type legible is done in the renderer's
+	 * ink budget rather than here.
+	 */
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		-webkit-mask-image: radial-gradient(
+			ellipse 46% 44% at 50% 45%,
+			rgba(0, 0, 0, 0.68) 0%,
+			rgba(0, 0, 0, 0.85) 60%,
+			#000 100%
+		);
+		mask-image: radial-gradient(
+			ellipse 46% 44% at 50% 45%,
+			rgba(0, 0, 0, 0.68) 0%,
+			rgba(0, 0, 0, 0.85) 60%,
+			#000 100%
+		);
+	}
+
+	/* A phone has no margins for the cloud to live in, so every mark it draws lands
+	   under a line of type. Same picture, less ink. */
+	@media (max-width: 48rem) {
+		.backdrop {
+			opacity: 0.55;
+		}
+	}
+
 	main {
+		position: relative;
+		z-index: 1;
 		max-width: 46rem;
 		margin: 0 auto;
 		padding: clamp(2.5rem, 7vw, 5rem) 1.5rem 4rem;

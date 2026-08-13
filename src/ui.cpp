@@ -11,28 +11,41 @@
 #include "chorus.h"
 #include "syrinx.h"
 
+#if LYREBIRD_UI_GALAXY
+#include "galaxy.h"
+#endif
+
 // ---- layout (320 x 240, rotation 1) ---------------------------------------
 // Both the Fire and the CoreS3 are 320x240 in landscape. Read from the display
 // rather than assuming, so a third board does not silently draw off-screen.
 static int SCR_W = 320;
 static int SCR_H = 240;
 
-#define HEAD_H 20            // filled header bar
-#define NAME_Y 26            // species / ALL BIRDS
-#define SUB_Y 48             // slot, mode, roster size
+// Everything that is *text* lives in one filled block at the top, so the band
+// gets the rest. The name is the largest thing on the screen because it is the
+// thing you changed; the slot, the mode and the two load figures are one small
+// line under it; the volume is the block's bottom edge rather than a widget.
+//
+// Text and picture used to alternate down the screen — header, name, sub-line,
+// band, info line, volume bar, hints — which cost the band 40 px and left the
+// name floating between two rules with no rank. One block, one band.
+#define HEAD_H 36            // filled header block: name, sub-line, readouts
+#define NAME_Y 4             // species / ALL BIRDS, size 2
+#define SUB_Y 24             // slot + mode + roster, and dsp / voices at the right
+#define VOL_Y HEAD_H         // the block's bottom edge *is* the volume readout
+#define VOL_H 2
 #define BAND_X 4
-#define BAND_Y 62
+#define BAND_Y (VOL_Y + VOL_H + 2)
 #define BAND_W 312
-#define BAND_H 124
+#define BAND_H 158
 #define PLOT_X (BAND_X + 1)  // inner plot area, inside the frame
 #define PLOT_Y (BAND_Y + 1)
 #define PLOT_W (BAND_W - 2)
 #define PLOT_H (BAND_H - 2)
-#define INFO_Y 189
-#define VOL_Y 200
-#define VOL_H 8
 // The bottom strip: the hint line on a board with real buttons, three labelled
-// touch zones on one without. Same region either way.
+// touch zones on one without. Same region either way. It must stay clear of
+// TOUCH_HIT_Y (200) — the touch target is deliberately taller than the drawing,
+// so the band has to end above it or a tap on the picture presses a button.
 #define BAR_Y 211
 #define BAR_H 29
 
@@ -52,8 +65,10 @@ static const uint16_t C_TEXT = 0xFFFF;
 static const uint16_t C_ACCENT = 0xFD20; // orange
 static const uint16_t C_GRID = 0x1082;   // octave marks inside the band
 
+#if !LYREBIRD_UI_GALAXY
 static int s_sweepX = 0;
 static float s_logSpan = 0;
+#endif
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -76,11 +91,9 @@ static uint16_t hsv565(float h, float s, float v) {
     return M5.Display.color565((uint8_t)(r * 255.0f), (uint8_t)(g * 255.0f), (uint8_t)(b * 255.0f));
 }
 
-// One colour per singing individual. On the all-birds slot the roster is two
-// birds per species with adjacent tags, so a species owns a region of the wheel
-// and its two individuals differ only in brightness; on a single-species slot
-// the four birds get four well-separated hues instead.
-static uint16_t voiceColor(uint8_t tag, float env, bool allBirds) {
+// See ui.h. Not static: src/galaxy.cpp lights a sounding species in the same
+// colour the sweep would have drawn it.
+uint16_t uiVoiceColor(uint8_t tag, float env, bool allBirds) {
     float hue, val;
     if (allBirds) {
         // Hue spans the roster *sample*, not the corpus: with thousands of
@@ -99,6 +112,7 @@ static uint16_t voiceColor(uint8_t tag, float env, bool allBirds) {
     return hsv565(hue, 0.85f, val);
 }
 
+#if !LYREBIRD_UI_GALAXY
 static int yForF0(float f0) {
     if (f0 < F_LO) f0 = F_LO;
     float lg = logf(f0 / F_LO) / s_logSpan;
@@ -107,6 +121,7 @@ static int yForF0(float f0) {
     int y = PLOT_Y + PLOT_H - 1 - (int)(lg * (float)(PLOT_H - 1));
     return y;
 }
+#endif
 
 static void drawTextRight(int rightX, int y, uint8_t size, uint16_t fg, uint16_t bg,
                           const char* text) {
@@ -119,54 +134,71 @@ static void drawTextRight(int rightX, int y, uint8_t size, uint16_t fg, uint16_t
 
 // ---- chrome ----------------------------------------------------------------
 
-static void drawHeader() {
-    M5.Display.fillRect(0, 0, SCR_W, HEAD_H, C_HEAD);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(C_ACCENT, C_HEAD);
-    M5.Display.setCursor(6, 7);
-    M5.Display.print("LYREBIRD");
-
-    char buf[16];
-    snprintf(buf, sizeof(buf), "vol %3d%%", (int)(audioGetVolume() * 100.0f + 0.5f));
-    drawTextRight(SCR_W - 6, 7, 1, C_TEXT, C_HEAD, buf);
-    M5.Display.drawFastHLine(0, HEAD_H, SCR_W, C_RULE);
+// The two live figures, in the header's right-hand corner. Repainted every frame
+// straight over themselves — opaque background colour, no clear — so the format
+// is fixed-width on purpose: right-aligned text that shrinks would leave the tail
+// of the longer string behind it.
+//
+// dsp is the one worth watching. Past ~90 % the render task is about to miss the
+// DMA, which is what a crackle sounds like — worth seeing before hearing.
+static void drawReadouts() {
+    const float load = audioGetLoad();
+    int pct = (int)(load * 100.0f + 0.5f);
+    if (pct > 999) pct = 999;
+    char buf[40];
+    snprintf(buf, sizeof(buf), "%d/%d voices   dsp %3d%%", syrinxActiveVoices(),
+             SYRINX_MAX_VOICES, pct);
+    drawTextRight(SCR_W - 6, SUB_Y, 1, load > 0.9f ? C_ACCENT : C_DIM, C_HEAD, buf);
 }
 
-static void drawName() {
+// The header block, all of it. One fill and then text over it, because a
+// partial repaint of a filled block has to repaint the fill anyway — and it is
+// 36 rows, which is nothing next to the band it is protecting.
+//
+// The hierarchy, top to bottom and left to right: the bird's name, then what it
+// is doing, then how hard the machine is working. Volume is the block's own
+// bottom edge, since it is a quantity and not a control.
+static void drawHead() {
+    M5.Display.fillRect(0, 0, SCR_W, HEAD_H, C_HEAD);
+
+    // ---- the name ----------------------------------------------------------
     const char* label = chorusLabel();
-    bool all = chorusAllBirds();
-    // size 2 fits 25 characters; the long common names fall back to size 1
-    uint8_t size = strlen(label) <= 25 ? 2 : 1;
-    M5.Display.fillRect(0, NAME_Y - 2, SCR_W, 20, C_BG);
+    const bool all = chorusAllBirds();
+    // size 2 is 12 px per character, so 26 of them fill the width; the long
+    // common names fall back to size 1 rather than being cut off.
+    const uint8_t size = strlen(label) <= 24 ? 2 : 1;
     M5.Display.setTextSize(size);
-    M5.Display.setTextColor(all ? C_ACCENT : C_TEXT, C_BG);
+    M5.Display.setTextColor(all ? C_ACCENT : C_TEXT, C_HEAD);
     M5.Display.setCursor(6, size == 2 ? NAME_Y : NAME_Y + 4);
     M5.Display.print(label);
-}
 
-static void drawSub() {
     char buf[64];
+    snprintf(buf, sizeof(buf), "vol %d%%", (int)(audioGetVolume() * 100.0f + 0.5f));
+    drawTextRight(SCR_W - 6, NAME_Y + (size == 2 ? 4 : 4), 1, C_DIM, C_HEAD, buf);
+
+    // ---- what it is doing --------------------------------------------------
     const char* state;
     if (!chorusEnabled()) state = "paused";
-    else if (chorusAllBirds()) state = "chorus";
+    else if (all) state = "chorus";
     else state = chorusMode() == MODE_CHORUS ? "chorus" : "solo";
 
-    snprintf(buf, sizeof(buf), "%d/%d  %s  %d birds%s",
-             chorusSlot() + 1, chorusSlotCount(), state, chorusRosterSize(),
-             chorusAllBirds() ? ", all species" : "");
-    M5.Display.fillRect(0, SUB_Y, SCR_W, 8, C_BG);
+    snprintf(buf, sizeof(buf), "%d/%d  %s  %d birds", chorusSlot() + 1,
+             chorusSlotCount(), state, chorusRosterSize());
     M5.Display.setTextSize(1);
-    M5.Display.setTextColor(chorusEnabled() ? C_DIM : C_ACCENT, C_BG);
+    M5.Display.setTextColor(chorusEnabled() ? C_DIM : C_ACCENT, C_HEAD);
     M5.Display.setCursor(6, SUB_Y);
     M5.Display.print(buf);
+
+    drawReadouts();
 }
 
+// Volume, as the 2 px edge the header block sits on. A quantity that changes
+// while a button is held wants to be readable at a glance and to cost no
+// vertical space at all, and a rule that fills does both.
 static void drawVolumeBar() {
-    int w = SCR_W - 12;
-    M5.Display.drawRect(6, VOL_Y, w, VOL_H, C_RULE);
-    int fill = (int)((float)(w - 2) * audioGetVolume());
-    M5.Display.fillRect(7, VOL_Y + 1, fill, VOL_H - 2, C_ACCENT);
-    if (fill < w - 2) M5.Display.fillRect(7 + fill, VOL_Y + 1, w - 2 - fill, VOL_H - 2, C_BG);
+    const int fill = (int)((float)SCR_W * audioGetVolume());
+    M5.Display.fillRect(0, VOL_Y, fill, VOL_H, C_ACCENT);
+    if (fill < SCR_W) M5.Display.fillRect(fill, VOL_Y, SCR_W - fill, VOL_H, C_RULE);
 }
 
 // The bottom strip. On the Fire it names what the three physical buttons do; on
@@ -206,7 +238,9 @@ static void drawBottomStrip() {
 static void drawBandFrame() {
     M5.Display.drawRect(BAND_X, BAND_Y, BAND_W, BAND_H, C_RULE);
     M5.Display.fillRect(PLOT_X, PLOT_Y, PLOT_W, PLOT_H, C_BG);
-    // octave marks, labelled at the left edge
+#if !LYREBIRD_UI_GALAXY
+    // Octave marks. The galaxy has no frequency axis to rule — a mark's height
+    // is its pitch, but the cloud turns, so a fixed line would be a lie.
     static const float marks[] = {500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f};
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(C_GRID, C_BG);
@@ -214,41 +248,52 @@ static void drawBandFrame() {
         int y = yForF0(f);
         for (int x = PLOT_X; x < PLOT_X + PLOT_W; x += 6) M5.Display.drawPixel(x, y, C_GRID);
     }
+#endif
 }
 
 // ---- public ----------------------------------------------------------------
 
 void uiInit() {
+#if !LYREBIRD_UI_GALAXY
     s_logSpan = logf(F_SPAN);
+#endif
     M5.Display.setRotation(1);
     M5.Display.setTextWrap(false);
     SCR_W = M5.Display.width();
     SCR_H = M5.Display.height();
+#if LYREBIRD_UI_GALAXY
+    galaxyInit(PLOT_X, PLOT_Y, PLOT_W, PLOT_H);
+#endif
 }
 
 void uiFullRedraw() {
     M5.Display.fillScreen(C_BG);
-    drawHeader();
-    drawName();
-    drawSub();
+    drawHead();
     drawBandFrame();
     drawVolumeBar();
     drawBottomStrip();
+#if LYREBIRD_UI_GALAXY
+    galaxyReset();
+#else
     s_sweepX = 0;
+#endif
 }
 
 void uiChrome() {
-    drawHeader();
-    drawName();
-    drawSub();
+    drawHead();
     drawVolumeBar();
     drawBottomStrip();
 }
 
 void uiFrame() {
-    // ---- the sweep ---------------------------------------------------------
     SyrinxVoiceInfo voices[SYRINX_MAX_VOICES];
     int n = syrinxSnapshot(voices, SYRINX_MAX_VOICES);
+
+#if LYREBIRD_UI_GALAXY
+    // ---- the cloud ---------------------------------------------------------
+    galaxyFrame();
+#else
+    // ---- the sweep ---------------------------------------------------------
     bool all = chorusAllBirds();
 
     // clear the columns we are about to write, restoring the octave grid
@@ -264,7 +309,7 @@ void uiFrame() {
     for (int i = 0; i < n; i++) {
         if (voices[i].env <= 0.004f) continue;
         int y = yForF0(voices[i].f0);
-        uint16_t c = voiceColor(voices[i].tag, voices[i].env, all);
+        uint16_t c = uiVoiceColor(voices[i].tag, voices[i].env, all);
         // 3 px tall so a trace reads as a line rather than a dotted path
         int top = y - 1 < PLOT_Y ? PLOT_Y : y - 1;
         int h = (top + 3 > PLOT_Y + PLOT_H) ? PLOT_Y + PLOT_H - top : 3;
@@ -274,20 +319,7 @@ void uiFrame() {
     s_sweepX = (s_sweepX + SWEEP_STEP) % PLOT_W;
     // leading edge, so the eye can find "now" in a full band
     M5.Display.drawFastVLine(PLOT_X + s_sweepX, PLOT_Y, PLOT_H, C_RULE);
+#endif
 
-    // ---- live readouts (opaque text: no clear, no flicker) -----------------
-    char buf[32];
-    snprintf(buf, sizeof(buf), "voices %d/%d", n, SYRINX_MAX_VOICES);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(C_DIM, C_BG);
-    M5.Display.setCursor(6, INFO_Y);
-    M5.Display.print(buf);
-
-    // DSP load. Past ~0.9 the render task is about to miss the DMA, which is
-    // what a crackle sounds like — worth seeing before hearing.
-    float load = audioGetLoad();
-    int pct = (int)(load * 100.0f + 0.5f);
-    if (pct > 999) pct = 999;
-    snprintf(buf, sizeof(buf), "dsp %3d%%", pct);
-    drawTextRight(SCR_W - 6, INFO_Y, 1, load > 0.9f ? C_ACCENT : C_DIM, C_BG, buf);
+    drawReadouts();
 }

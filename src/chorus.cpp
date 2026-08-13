@@ -34,7 +34,7 @@
 #define ROSTER_ROLL_CHANCE 0.12f
 #define SONG_PLAYERS 6            // concurrent songs in flight (duet answers overlap)
 #define SONGS_PER_MINUTE 12.0f    // one species
-#define SONGS_PER_MINUTE_ALL 34.0f// all twelve: a dawn chorus, not a solo with echoes
+#define SONGS_PER_MINUTE_ALL 34.0f// the whole sample: a dawn chorus, not a solo with echoes
 #define ANSWER_CHANCE 0.25f
 #define TREMBOR 0.006f            // per-note wobble, as individual.ts applyVoice
 #define GOLDEN 0.6180339887498949f
@@ -331,3 +331,7 @@ void chorusSetEnabled(bool on) {
 bool chorusEnabled() { return s_enabled; }
 
 int chorusRosterSize() { return s_rosterN; }
+
+int chorusSpeciesForTag(uint8_t tag) {
+    return tag < s_rosterN ? (int)s_roster[tag].species : -1;
+}

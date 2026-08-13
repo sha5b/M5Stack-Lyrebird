@@ -1,6 +1,6 @@
 {
   "name": "Lyrebird — M5Stack Fire",
-  "version": "bb80578-dirty",
+  "version": "c5a9fe5-dirty",
   "new_install_prompt_erase": true,
   "builds": [
     {

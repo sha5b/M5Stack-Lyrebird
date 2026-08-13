@@ -1,14 +1,20 @@
-// The screen: a sweeping spectrogram of the chorus.
+// The screen: chrome, and a band that draws the chorus.
 //
-// Every frame plots each sounding voice at its current pitch on a log axis
-// (250 Hz - 10 kHz), coloured by which individual is singing and dimmed by its
-// envelope, into a playhead column that wraps around the band. Syllable
-// contours draw themselves as the notes sound, so a duet is visible as two
-// traces and the all-birds slot as a field of them.
+// The band has two pictures, chosen at build time by LYREBIRD_UI_GALAXY:
 //
-// Nothing here clears the band except uiFullRedraw() — the sweep *is* the
-// history, so partial updates repaint text over itself (opaque background
-// colour) rather than blanking regions.
+//   sweeping spectrogram (the default, and the Fire) — every frame plots each
+//     sounding voice at its current pitch on a log axis (250 Hz - 10 kHz),
+//     coloured by which individual is singing and dimmed by its envelope, into a
+//     playhead column that wraps around the band. Syllable contours draw
+//     themselves as the notes sound, so a duet is two traces and the all-birds
+//     slot a field of them. It says what pitch is sounding now.
+//
+//   the corpus as a point cloud (the CoreS3) — see galaxy.h. It says which of
+//     2423 species is sounding, and where that species sits in the corpus.
+//
+// Nothing here clears the band except uiFullRedraw(). For the sweep that is
+// load-bearing — the sweep *is* the history — so partial updates repaint text
+// over itself (opaque background colour) rather than blanking regions.
 #pragma once
 
 #include <stdint.h>
@@ -23,6 +29,13 @@ void uiFullRedraw();
 // keeps its contents. Use for volume, mode and pause changes.
 void uiChrome();
 
-// One animation step: advances the playhead one column and refreshes the live
-// readouts. Call at roughly 25 Hz; it is cheap and does not block.
+// One animation step: advances whichever picture the band is drawing and
+// refreshes the live readouts. Call at roughly 25 Hz; it does not block.
 void uiFrame();
+
+// One colour per singing individual, so both band pictures colour a voice the
+// same way. On the all-birds slot the roster is two birds per species with
+// adjacent tags, so a species owns a region of the wheel and its two individuals
+// differ only in brightness; on a single-species slot the four birds get four
+// well-separated hues instead. `env` dims it.
+uint16_t uiVoiceColor(uint8_t tag, float env, bool allBirds);
