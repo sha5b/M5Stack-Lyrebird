@@ -2,14 +2,23 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<!-- The parent project's mark: a syrinx, one stem dividing into two unequal
+		     bronchi, which is the mechanism every note here is synthesized from. All of
+		     these are its files, copied from Lyrebird/app/static/brand — the same mark on
+		     the board's page as on the instrument's.
+
+		     Order matters: a browser takes the last icon it understands, so the SVG comes
+		     first and `alternate icon` carries the fallback for one that cannot read it. -->
 		<link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
-		<link rel="icon" type="image/png" sizes="256x256" href="%sveltekit.assets%/favicon.png" />
-		<link rel="icon" type="image/x-icon" href="%sveltekit.assets%/favicon.ico" />
+		<link rel="alternate icon" href="%sveltekit.assets%/favicon.ico" sizes="16x16 32x32 48x48" />
+		<link rel="icon" type="image/png" sizes="192x192" href="%sveltekit.assets%/icon-192.png" />
+		<link rel="icon" type="image/png" sizes="512x512" href="%sveltekit.assets%/icon-512.png" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<link rel="sitemap" type="application/xml" href="%sveltekit.assets%/sitemap.xml" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="theme-color" content="#fafbfc" />
 		<meta name="color-scheme" content="light" />
-		<meta name="author" content="sha5b" />
+		<meta name="author" content="Shahab Nedaei" />
 		<meta name="robots" content="index, follow, max-image-preview:large" />
 
 		<!-- The parent project's pairing: Plex Sans for prose and controls, Plex Mono for

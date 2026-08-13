@@ -1,105 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="13"/>
-    </filter>
-  </defs>
-  <rect width="512" height="512" rx="113" fill="#060a12"/>
-  <ellipse cx="256" cy="256" rx="150" ry="150" fill="#0b1220" opacity="0.7" filter="url(#glow)"/>
-  <g filter="url(#glow)" opacity="0.85">
-    <line x1="256" y1="256" x2="138" y2="148" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="369" y2="138" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="399" y2="302" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="333" y2="399" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="169" y2="389" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="108" y2="282" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="256" y1="256" x2="251" y2="108" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="138" y1="148" x2="90" y2="90" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="333" y1="399" x2="420" y2="420" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="138" y1="148" x2="251" y2="108" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="369" y1="138" x2="399" y2="302" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="169" y1="389" x2="333" y2="399" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="108" y1="282" x2="169" y2="389" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <line x1="138" y1="148" x2="108" y2="282" stroke="#39ff88" stroke-width="12" stroke-linecap="round"/>
-    <line x1="369" y1="138" x2="251" y2="108" stroke="#8b5cf6" stroke-width="12" stroke-linecap="round"/>
-    <circle cx="256" cy="256" r="40.0" fill="#39ff88"/>
-    <circle cx="138" cy="148" r="21.2" fill="#8b5cf6"/>
-    <circle cx="369" cy="138" r="16.5" fill="#39ff88"/>
-    <circle cx="399" cy="302" r="23.6" fill="#8b5cf6"/>
-    <circle cx="333" cy="399" r="17.7" fill="#39ff88"/>
-    <circle cx="169" cy="389" r="25.9" fill="#8b5cf6"/>
-    <circle cx="108" cy="282" r="14.1" fill="#39ff88"/>
-    <circle cx="251" cy="108" r="11.8" fill="#8b5cf6"/>
-    <circle cx="420" cy="420" r="10.6" fill="#39ff88"/>
-    <circle cx="90" cy="90" r="9.4" fill="#8b5cf6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-labelledby="lyrebird-mark-title lyrebird-mark-desc">
+  <title id="lyrebird-mark-title">Lyrebird</title>
+  <desc id="lyrebird-mark-desc">A bifurcating syrinx: one tracheal stem dividing into two
+  unequal bronchi, each ending in a vibrating membrane.</desc>
+
+  <!--
+    The mark: a syrinx, flat. One stem, two branches, two membranes.
+
+    **The subject is the sound source, not the bird.** A real bird's syrinx is bilateral — the
+    trachea divides, and each side vibrates independently, which is why a bird can sing two
+    notes at once. That division is the thing every note in this app is synthesized from: the
+    two-parameter oscillator the whole instrument is built on. The mark draws the mechanism
+    rather than the animal.
+
+    **The reduction is already done at 512.** Three strokes and two dots, so there is no
+    separate small variant and no need for one — see the raster table in README.md.
+
+    **The Y, which is the one thing to know about this mark.** A stem dividing into two
+    branches reads as the letter Y, and it does so at every size including 512. That was
+    raised as a disqualifying defect when this was one of three candidates — the brief was a
+    mark without type, and the old tail-and-curl mark had been rejected past 220 degrees for
+    reading as a digit 6, which is the same failure — and the owner chose this one anyway
+    (2026-08-06: "i like that icon use that please everywhere"). It is recorded here so the
+    next person reads it as a decision rather than as an oversight.
+
+    Three things push against the letter, and they are why the geometry is what it is:
+
+    - **The branches are unequal.** Different lengths, different curvature, different tip
+      sizes. A capital Y is symmetric; this is a bifurcation.
+    - **The branches curve.** A Y is two straight diagonals. These are cubics that leave the
+      stem tangentially, as a tube divides.
+    - **The tips are membranes, not stroke ends.** Two filled circles of different radius,
+      which no letterform has.
+
+    **Not mirrored, and that is load-bearing.** Two arms bowing outward from one point make a
+    heart — exactly, not approximately — which the previous mark's notes recorded after two
+    attempts. The asymmetry here is what keeps that from happening as well.
+  -->
+  <circle cx="32" cy="32" r="32" fill="currentColor"/>
+
+  <g fill="none" stroke="var(--paper, #fafbfc)" stroke-width="4.2" stroke-linecap="round">
+    <!-- trachea -->
+    <path d="M31 50 V37"/>
+    <!-- the two bronchi, unequal in length and in curvature -->
+    <path d="M31 37 C31 27 26 24 21 19"/>
+    <path d="M31 37 C33 30 38 29 44 26"/>
   </g>
-  <g>
-    <line x1="256" y1="256" x2="138" y2="148" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="217" cy="221" r="4.6" fill="#8b5cf6"/>
-    <circle cx="178" cy="185" r="4.6" fill="#8b5cf6"/>
-    <line x1="256" y1="256" x2="369" y2="138" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="293" cy="217" r="4.6" fill="#39ff88"/>
-    <circle cx="330" cy="178" r="4.6" fill="#39ff88"/>
-    <line x1="256" y1="256" x2="399" y2="302" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="303" cy="271" r="4.6" fill="#8b5cf6"/>
-    <circle cx="351" cy="286" r="4.6" fill="#8b5cf6"/>
-    <line x1="256" y1="256" x2="333" y2="399" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="281" cy="303" r="4.6" fill="#39ff88"/>
-    <circle cx="307" cy="351" r="4.6" fill="#39ff88"/>
-    <line x1="256" y1="256" x2="169" y2="389" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="227" cy="300" r="4.6" fill="#8b5cf6"/>
-    <circle cx="199" cy="344" r="4.6" fill="#8b5cf6"/>
-    <line x1="256" y1="256" x2="108" y2="282" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="207" cy="264" r="4.6" fill="#39ff88"/>
-    <circle cx="158" cy="273" r="4.6" fill="#39ff88"/>
-    <line x1="256" y1="256" x2="251" y2="108" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="254" cy="207" r="4.6" fill="#8b5cf6"/>
-    <circle cx="253" cy="158" r="4.6" fill="#8b5cf6"/>
-    <line x1="138" y1="148" x2="90" y2="90" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="122" cy="129" r="4.6" fill="#8b5cf6"/>
-    <circle cx="106" cy="110" r="4.6" fill="#8b5cf6"/>
-    <line x1="333" y1="399" x2="420" y2="420" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="362" cy="406" r="4.6" fill="#39ff88"/>
-    <circle cx="390" cy="413" r="4.6" fill="#39ff88"/>
-    <line x1="138" y1="148" x2="251" y2="108" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="175" cy="135" r="4.6" fill="#8b5cf6"/>
-    <circle cx="213" cy="121" r="4.6" fill="#8b5cf6"/>
-    <line x1="369" y1="138" x2="399" y2="302" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="379" cy="192" r="4.6" fill="#8b5cf6"/>
-    <circle cx="389" cy="246" r="4.6" fill="#8b5cf6"/>
-    <line x1="169" y1="389" x2="333" y2="399" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="223" cy="392" r="4.6" fill="#39ff88"/>
-    <circle cx="277" cy="396" r="4.6" fill="#39ff88"/>
-    <line x1="108" y1="282" x2="169" y2="389" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="128" cy="317" r="4.6" fill="#8b5cf6"/>
-    <circle cx="148" cy="353" r="4.6" fill="#8b5cf6"/>
-    <line x1="138" y1="148" x2="108" y2="282" stroke="#39ff88" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="128" cy="192" r="4.6" fill="#39ff88"/>
-    <circle cx="118" cy="236" r="4.6" fill="#39ff88"/>
-    <line x1="369" y1="138" x2="251" y2="108" stroke="#8b5cf6" stroke-width="5.5" stroke-linecap="round"/>
-    <circle cx="330" cy="128" r="4.6" fill="#8b5cf6"/>
-    <circle cx="291" cy="118" r="4.6" fill="#8b5cf6"/>
-    <circle cx="256" cy="256" r="34.8" fill="#39ff88"/>
-    <circle cx="138" cy="148" r="18.4" fill="#8b5cf6"/>
-    <circle cx="369" cy="138" r="14.3" fill="#39ff88"/>
-    <circle cx="399" cy="302" r="20.5" fill="#8b5cf6"/>
-    <circle cx="333" cy="399" r="15.4" fill="#39ff88"/>
-    <circle cx="169" cy="389" r="22.5" fill="#8b5cf6"/>
-    <circle cx="108" cy="282" r="12.3" fill="#39ff88"/>
-    <circle cx="251" cy="108" r="10.2" fill="#8b5cf6"/>
-    <circle cx="420" cy="420" r="9.2" fill="#39ff88"/>
-    <circle cx="90" cy="90" r="8.2" fill="#8b5cf6"/>
-  </g>
-  <g>
-    <circle cx="256" cy="256" r="14.6" fill="#a6ffc9"/>
-    <circle cx="138" cy="148" r="7.7" fill="#cbb6fb"/>
-    <circle cx="369" cy="138" r="6.0" fill="#a6ffc9"/>
-    <circle cx="399" cy="302" r="8.6" fill="#cbb6fb"/>
-    <circle cx="333" cy="399" r="6.5" fill="#a6ffc9"/>
-    <circle cx="169" cy="389" r="9.5" fill="#cbb6fb"/>
-    <circle cx="108" cy="282" r="5.2" fill="#a6ffc9"/>
-    <circle cx="251" cy="108" r="4.3" fill="#cbb6fb"/>
-    <circle cx="420" cy="420" r="3.9" fill="#a6ffc9"/>
-    <circle cx="90" cy="90" r="3.4" fill="#cbb6fb"/>
-  </g>
+  <!-- the vibrating membranes, unequal, so the pair cannot read as symmetry -->
+  <circle cx="20" cy="17" r="4.2" fill="var(--paper, #fafbfc)"/>
+  <circle cx="46" cy="25" r="3.2" fill="var(--paper, #fafbfc)"/>
 </svg>

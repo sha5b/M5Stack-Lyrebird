@@ -13,11 +13,16 @@
 		type FirmwareMeta
 	} from '$lib/installer';
 	import {
-		SITE_URL,
+		CANONICAL_URL,
 		SITE_TITLE,
 		SITE_DESCRIPTION,
 		SITE_KEYWORDS,
 		SITE_NAME,
+		SITE_LOCALE,
+		OG_IMAGE,
+		OG_IMAGE_WIDTH,
+		OG_IMAGE_HEIGHT,
+		OG_IMAGE_ALT,
 		ARTIST,
 		PARENT_PROJECT,
 		REPO_URL,
@@ -259,13 +264,22 @@
 	<title>{SITE_TITLE}</title>
 	<meta name="description" content={SITE_DESCRIPTION} />
 	<meta name="keywords" content={SITE_KEYWORDS} />
-	<link rel="canonical" href={SITE_URL} />
+	<link rel="canonical" href={CANONICAL_URL} />
 	<meta property="og:type" content="website" />
 	<meta property="og:site_name" content={SITE_NAME} />
 	<meta property="og:title" content={SITE_TITLE} />
 	<meta property="og:description" content={SITE_DESCRIPTION} />
-	<meta property="og:url" content={SITE_URL} />
-	<meta name="twitter:card" content="summary" />
+	<meta property="og:url" content={CANONICAL_URL} />
+	<meta property="og:locale" content={SITE_LOCALE} />
+	<meta property="og:image" content={OG_IMAGE} />
+	<meta property="og:image:width" content={String(OG_IMAGE_WIDTH)} />
+	<meta property="og:image:height" content={String(OG_IMAGE_HEIGHT)} />
+	<meta property="og:image:alt" content={OG_IMAGE_ALT} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={SITE_TITLE} />
+	<meta name="twitter:description" content={SITE_DESCRIPTION} />
+	<meta name="twitter:image" content={OG_IMAGE} />
+	<meta name="twitter:image:alt" content={OG_IMAGE_ALT} />
 	{@html LD_JSON}
 </svelte:head>
 
@@ -514,8 +528,8 @@
 		</dl>
 
 		<p class="note">
-			<b>The screen puts a camera inside the corpus.</b> A very faint lattice gives it
-			somewhere to be; the birds are not drawn until they sing. When one starts a song, a
+			<b>The screen puts a camera inside the corpus.</b> Nothing is drawn for a bird until
+			it sings, so the band is black until something happens. When a bird starts a song, a
 			cross of dashed rules is struck through it and a thread of stretched dots grows out
 			of it — fat where the note is loud, pinched where it is quiet, with a haloed bead at
 			the note being sung right now. The camera frames whoever is singing: close in on

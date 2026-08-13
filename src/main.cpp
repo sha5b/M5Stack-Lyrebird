@@ -58,12 +58,10 @@
  *            side button brings it back.
  *   Fire     IP5306, where powerOff() only releases the boost keep-on and
  *            returns. On battery the regulator then drops the rail, which is
- *            off. On USB it cannot — the charger is holding it up — so the
- *            fallback below deep-sleeps instead: dark screen, minimal current,
- *            wakes on a button.
+ *            off. On USB it cannot — the charger is holding it up — so the call
+ *            comes back and the board simply stays here, dark and paused.
  *
- * Hence both calls, in that order. powerOff() first because it is the real thing
- * where it works, deepSleep() after because on the Fire the first one comes back.
+ * Which is why there is no deep sleep after it; see sleepNow().
  */
 #define PAUSE_OFF_MS 60000
 

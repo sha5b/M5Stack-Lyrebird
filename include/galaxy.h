@@ -11,9 +11,9 @@
 // says what pitch is sounding now; the arms say which of 2423 birds is singing,
 // where that bird sits among the rest, and what its song is doing.
 //
-// Enabled per board by LYREBIRD_UI_GALAXY (platformio.ini). Costs the band as an
-// off-screen canvas (~95 KB of DRAM), ~28 KB for the trails, and 54 KB of flash
-// for the layout.
+// Enabled per board by LYREBIRD_UI_GALAXY (platformio.ini), and both boards ship
+// with it on. Costs the band as an off-screen canvas (~89 KB of DRAM allocated at
+// runtime), 36 KB of static RAM for the trails, and 54 KB of flash for the layout.
 #pragma once
 
 #include <stdint.h>

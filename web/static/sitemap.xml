@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One URL, and that is the whole site: the flasher, the explanation and the controls are
+  one document. `llms.txt` is listed beside it because it is the other thing here written
+  to be read rather than executed.
+
+  Not listed: the firmware images. They are addressable and they are the point of the
+  page, but a 1.9 MB binary is not a document, and robots.txt excludes the directory.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://m5lyrebird.variable.gallery/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://m5lyrebird.variable.gallery/llms.txt</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+</urlset>

@@ -1,0 +1,68 @@
+# Lyrebird for M5Stack
+
+> A pocket dawn chorus. This page flashes an M5Stack Fire or CoreS3 with firmware that
+> synthesizes 2423 songbird species on the device, from a physical model of the avian
+> syrinx. No samples, no SD card, no network: the corpus is compiled into the binary as
+> tables and every note is integrated on a 240 MHz microcontroller.
+
+Live: https://m5lyrebird.variable.gallery/
+Source: https://github.com/sha5b/M5Stack-Lyrebird
+Parent project: https://lyrebird.variable.gallery/ (the browser instrument this is a port of)
+Artist: Shahab Nedaei — https://shahabnedaei.variable.gallery/ · https://variable.gallery/
+Licence: CC-BY-NC-SA-4.0
+
+## The three things most often got wrong
+
+1. **It plays no samples.** There is no audio in the firmware. Each note is integrated from
+   the Mindlin–Laje syrinx oscillator, sample by sample, driven by the two parameters a real
+   bird controls: air-sac pressure and syringeal tension. What is compiled in is the
+   *description* of a syllable — pitch contour, duration, timbre class, envelope — and the
+   offline calibration tables the model needs.
+2. **It is not a streaming device.** No Wi-Fi, no SD card, no phone. The board is a
+   standalone instrument once flashed; the browser is only the flasher.
+3. **The picture on the screen is not a spectrogram.** It is a camera inside the corpus,
+   following whoever is singing. A spectrogram is still in the source behind a build flag,
+   because it answers a different question — what pitch is sounding now.
+
+## What you get
+
+Two boards, two binaries, one behaviour:
+
+- **M5Stack Fire** — ESP32, audio out of the built-in DAC on GPIO25, DMA-paced at 22050 Hz,
+  three physical buttons.
+- **M5Stack CoreS3** — ESP32-S3, 16-bit PCM into the AW88298 amplifier, three touch zones
+  drawn along the bottom of the screen instead of buttons.
+
+It boots into **all birds**: twelve species at a time, two individuals of each, arriving as a
+Poisson process at about 34 songs a minute, with a 25 % chance a conspecific answers. The
+twelve turn over every few minutes, so the slot is a tour of the corpus rather than a fixed
+dozen. Stepping the dial goes down to one species at a time — 2424 positions in all.
+
+## The corpus, in numbers
+
+- **2423** species
+- **12724** syllables, each with its own pitch contour
+- **2442** songs — authored syllable sequences with their gaps
+- **4.0 MB** of generated C, which lands as **1.79 MB** of flash and no RAM: the tables are
+  read where they lie
+- **8** voices maximum, **16–64** Euler substeps per sample
+
+The data comes from the parent project's inventory: twelve species authored by hand, the rest
+fitted by its pipeline. The recordings behind it (xeno-canto, iNaturalist) are described as
+numbers and deleted there; no audio is redistributed by either project.
+
+## Flashing it
+
+Web Serial, so Chrome, Edge or Opera. The page reads the chip off the board and picks the
+matching image. A Fire resets itself into its bootloader over the cable. A CoreS3 needs its
+side button held for 2–3 seconds the first time, because it has no separate USB-UART bridge —
+after that its own USB-Serial-JTAG keeps its identity across a reset and it reflashes like any
+other board.
+
+There is also a command line: `pio run -e m5stack-fire -t upload`.
+
+## What it does not claim
+
+Nothing here is a claim about what birdsong means. The parent project states that position at
+length and labels every phrase with the evidence behind it; this firmware sings the syllables
+and their documented sequences, and does not translate anything.

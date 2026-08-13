@@ -14,17 +14,20 @@ firmware as PROGMEM headers.
 
 ## Current state
 
-- Both envs build: `pio run`. Measured off the ELFs —
+- Both envs build: `pio run`, which is where these figures come from —
 
   | env | flash | static RAM | + heap | band |
   |---|---|---|---|---|
-  | `m5stack-fire` | 1.79 MB of 3 MB | 68.4 KB | 96 KB canvas | roster + songs |
-  | `m5stack-cores3` | 1.78 MB of 3 MB | 65.5 KB | 96 KB canvas | roster + songs |
+  | `m5stack-fire` | 1.79 MB of 3 MB | 68.6 KB | 89 KB canvas | songs and struck crosses |
+  | `m5stack-cores3` | 1.78 MB of 3 MB | 65.7 KB | 89 KB canvas | songs and struck crosses |
 
-  The corpus is `rodata`, which is why 4.0 MB of generated C costs 30 KB of RAM. The
-  CoreS3's extra static RAM is the arm trails (32 tags x 72 points); its canvas is
-  allocated at runtime, so it does not appear in the build figure — about 160 KB of
-  320 KB in use once it is up. It logs the allocation over serial at boot.
+  The corpus is `rodata` and is read where it lies, which is why 4.0 MB of generated C
+  costs no RAM at all. Both boards draw the band now, so both pay the same 36.8 KB for
+  it — `s_trail` alone is 37120 bytes, 32 tags x 72 points — and the band's statics are
+  byte-identical across the two ELFs, so the ~3 KB between the boards is their own
+  drivers and not the picture. The canvas is on top of that and is allocated at runtime,
+  so it is not in the build figure; it logs the allocation and the free heap over serial
+  at boot.
 - `./scripts/build-firmware.sh` writes `lyrebird-fire.bin`, `lyrebird-cores3.bin`, a
   per-board `manifest-<id>.json` and one `firmware.json` listing both, into
   `web/static/firmware/`.
@@ -36,17 +39,29 @@ firmware as PROGMEM headers.
   2424-slot dial is live, the touch strip renders, and **`audioGetLoad()` reads 16 %** —
   which retires the CPU-headroom worry, since the crackle line is around 90 %.
 
-  What that photo does *not* settle: it is the pre-galaxy image (see below), and a
-  photograph says nothing about sound. **Nothing has been listened to** — whether either
-  board sings, how loud it is, and whether the crackle and hiss work below actually fixed
-  anything are all still open. A Fire has been connected and its reset sequence measured
-  over its own UART (see "The reset sequence"), but never flashed.
+  That photo is the pre-galaxy image, and a photograph says nothing about sound.
+  **Nothing has been listened to** — whether either board sings, how loud it is, and
+  whether the crackle and hiss work below actually fixed anything are all still open.
+
+  A Fire has since been flashed and run as well. **One thing was seen and it matters
+  beyond the feature it came from**: while the standing lattice existed, it registered on
+  the Fire and did not register on the CoreS3, with the same code and no board case
+  anywhere in that path (owner's eye, both boards on the desk). Either the CoreS3 was
+  running an older image, or **its panel does not resolve a blue of 1–4 of 31 the way the
+  Fire's does** — which is a fact about how faint anything on that board may be, not about
+  the lattice. It is unsettled and the lattice is gone, so the way to settle it now is to
+  reflash both from `web/static/firmware/` and compare something else faint.
 - **The merged images in `web/static/firmware/` are built by hand and go stale silently.**
   They are not a build product of `pio run`, so a `pio run` that succeeds proves nothing
   about what the page will flash. This has already cost one confusing session: the CoreS3
   was flashed with an image predating `src/galaxy.cpp` and came up with the spectrogram,
   which looks exactly like the galaxy not working. Run `./scripts/build-firmware.sh`
   after touching firmware, and check the timestamps before believing a symptom.
+
+  As they stand on disk they are current — merged after the last edit to `src/galaxy.cpp`
+  and `src/ui.cpp`. `firmware.json` says `3178822-dirty`, which is the tree the script was
+  run against: the version string names the commit the build *followed*, not the commit it
+  will land in, so a `-dirty` version there is normal and not a warning.
 - **`tools/verify_syrinx.py` fails on the shipped corpus.** See "Verification" below.
   This is the one thing to look at before anything else.
 
@@ -85,7 +100,7 @@ assets/                   vendored from Lyrebird: inventory.json (the authored 1
 tools/generate_assets.py  inventory JSON -> include/bird_data.h + include/calibration.h
 tools/generate_galaxy.py  include/bird_data.h -> web/src/lib/corpus.ts +
                           include/galaxy_data.h
-tools/preview_galaxy.py   draws the CoreS3's band to a PNG on the host
+tools/preview_galaxy.py   draws the band to a PNG on the host
 tools/verify_syrinx.py    host check of the DSP rework, no dependencies
 include/syrinx.h
 src/syrinx.cpp            the synth port
@@ -95,9 +110,10 @@ src/audio_spk.cpp         CoreS3: 16-bit PCM into M5.Speaker
 include/chorus.h
 src/chorus.cpp            Poisson scheduler + individual-bird roster + song players
 include/ui.h
-src/ui.cpp                the chrome, and the band: arms, or the sweep by flag
+src/ui.cpp                the chrome, and the band: arms, or the sweep by flag;
+                          GAP sets the band's equal margins
 include/galaxy.h
-src/galaxy.cpp            the band — roster, beaded songs, following camera
+src/galaxy.cpp            the band — beaded songs, struck crosses, following camera
 include/buttons.h
 src/buttons.cpp           three logical buttons over physical or touch
 src/main.cpp              M5 bring-up, button semantics, frame pacing
@@ -106,14 +122,14 @@ web/                      SvelteKit + esptool-js flasher (from CYD-Physarum)
 web/src/lib/galaxy.ts     the page's backdrop; corpus.ts is its generated data
 ```
 
-## The galaxy — the page's backdrop and the CoreS3's arms
+## The galaxy — the page's backdrop and the board's arms
 
 Both screens are arranged by the same layout and draw different things with it.
 
 **The layout happens once, in `tools/generate_galaxy.py`**, which reads
 `include/bird_data.h` and writes positions to `web/src/lib/corpus.ts` (base64, 54 KB
-packed) and `include/galaxy_data.h` (PROGMEM, 54 KB of flash plus a 4.8 KB per-species
-index). Re-run it whenever `generate_assets.py` runs. Every species gets an island on a
+packed) and `include/galaxy_data.h` (PROGMEM, 54 KB of flash — four bytes a mark, plus a
+4.8 KB per-species index inside that figure). Re-run it whenever `generate_assets.py` runs. Every species gets an island on a
 Fibonacci sphere; inside it, pitch, duration and contour sweep place each syllable.
 
 It used to lay out in TypeScript, which would have meant a second copy of the same maths
@@ -133,21 +149,26 @@ every mark lands under a line of type: handled by sizing off the window *diagona
 below 48rem.
 
 **The board draws a camera inside the corpus, following whoever is singing.** The band
-is 310 × 156 px, and that constraint is the whole design. Three versions:
+is 310 × 147 px, and that constraint is the whole design. Four versions, and the first
+three failed the same way in smaller and smaller forms — marks sitting there not meaning
+anything:
 
 | | what it drew | why it failed |
 |---|---|---|
 | 1 | 12724 marks accumulated into a brightness buffer | at that size twelve thousand marks is a texture, and the bird actually singing was four pixels lost inside it |
-| 2 | the same marks, dim, as a bed under the songs | a ground made of twelve thousand dots on a 156 px band is not a ground, it is grain |
-| 3 | the roster as a constellation, songs as beaded threads, camera following the singer | — |
+| 2 | the same marks, dim, as a bed under the songs | a ground made of twelve thousand dots on a 147 px band is not a ground, it is grain |
+| 3 | the roster as a constellation — two dozen dots, faded by how recently their bird sang | a dot on its way out still reads as a dot doing nothing, and a dozen of them is still a scatter that never changes |
+| 4 | a faint world-space lattice under the songs, to give the camera something static | another permanent thing that does not mean anything — the roster's fault one step further from the birds |
+| 5 | songs only: beaded threads, struck crosses, a following camera, black between songs | — |
 
-So the static layer is the **roster**, not the corpus: the two dozen birds that can
-actually sing right now, one dim dot each. A dozen distinct dots, since the two
-individuals of a species share an island. They earn their place twice — a camera with
-nothing static in frame is a camera you cannot see moving, and without them the travel
-between birds reads as marks appearing from nowhere.
+**So there is nothing permanent on the band at all.** Nothing is drawn for a bird until
+it sings, and between songs the band is black, which is the correct picture of nothing
+happening. Trails last about three seconds and songs arrive about every two, so it is
+rarely empty for long. The idea the roster and the lattice were both there to serve — a
+camera with nothing static in frame is a camera you cannot see moving — lost to the idea
+they both broke: everything on this band is something that is happening.
 
-Over that, the song: a chain of **stretched dots** growing out of its own bird's dot, each
+The song: a chain of **stretched dots** growing out of its own bird's place, each
 one a `drawWedgeLine` with its own radius at each end, so weight follows the envelope —
 loud syllables swell the thread, quiet ones pinch it — with a brighter bead over the newest
 dot. That is the parent's `shaders.ts` device (`uPointSize * (0.85 + vPeak * 2.4)`: a swell
@@ -156,8 +177,9 @@ says where the note *is*, more precisely than a thickening line) and its `ribbon
 
 The **camera** is `Framing.svelte` scaled to a panel, and it **frames the set rather than
 picking a favourite**. Every bird that has sounded within `FRAME_HOLD_MS` is in the shot;
-the target is their centroid and the distance is solved so their spread fills `FIT_FRAC` of
-the half-height, clamped to `[CAM_DIST_NEAR, CAM_DIST_FAR]`. One rule covers both cases that
+the target is their centroid and the distance is solved so what is drawn fills `FIT_FRAC` of
+the band — in screen space, on both axes, see below — clamped to `[CAM_DIST_NEAR,
+CAM_DIST_FAR]`. One rule covers both cases that
 matter: one bird has a spread of zero, clamps to the nearest shot and gets the big single
 gesture; two singing at once are shown *together* instead of the camera choosing one and
 losing the other off-frame. It follows heads rather than islands, so threads stream away
@@ -180,97 +202,74 @@ log axis, weight is the envelope, hue is the individual — the same hue the swe
 
 Threads are geometry, not smears: points are kept in layout space and re-projected every
 frame, so the camera can travel through a song already sung. Everything goes into an
-`M5Canvas` and is pushed whole, which is what stops a moving line from flickering — 96 KB
+`M5Canvas` and is pushed whole, which is what stops a moving line from flickering — 89 KB
 of DRAM allocated at runtime, and if it will not allocate the band stays black and says so
 over serial rather than crashing.
 
 `tools/preview_galaxy.py` re-implements the whole model on the host — camera, focus,
-easing, wedge dots — and writes a PNG. Four values were plainly wrong before it: `GROW` at
+easing, wedge dots — and writes a PNG. Three values were plainly wrong before it: `GROW` at
 0.016 (left over from version 1) made every song a 15 px scribble; `TWIST_RATE` at 0.42
-closed each thread into a loop, so the depth cue became the shape; the bed's `MARK_ADD` put
-a lone syllable at RGB (0, 2, 34), which on a dark panel is black; and at `ZOOM` 105 with
-no roster the band was one thread in a void.
+closed each thread into a loop, so the depth cue became the shape; and version 2's bed put
+a lone syllable at RGB (0, 2, 34), which on a dark panel is black — the same 565 rounding
+mistake the lattice went on to make, caught here first.
 
-**There are two grids, and they answer different halves of the same question.**
+**It is behind the firmware in one place**: it still solves the distance as a world radius
+against the band's half-height, which is what `src/galaxy.cpp` replaced with the
+screen-space measurement below. So composition transfers and framing no longer does
+exactly. Its docstring says so.
 
-*The struck one* is GridBurst: each new song lays a cross of three axis-aligned dashed rules
-through the bird that started it, rising over ~0.15 s and gone by ~1.8 s.
+**There is one grid, and it exists only where something is singing.** It is GridBurst's:
+each new song lays a cross of three axis-aligned dashed rules through the bird that started
+it, rising over ~0.15 s and gone by ~1.8 s.
 
-*The standing one* is a world-space lattice, very faint, under everything. The parent
-rejected a grid twice — *a flat lattice over the whole window does not move with the cloud,
-so it fights the depth it is supposed to establish*, and a ground plane is *a permanent floor
-under a corpus that has no floor* — and both objections are about a **screen-space** lattice
-or a floor. This is neither: it is in world space, it rotates and parallaxes, and it only
-became worth having once the camera started moving, because a moving camera with nothing
-static in frame is a camera you cannot see move.
+**A standing world-space lattice was tried under it, and is gone.** The argument for it was
+sound on paper — the parent rejected a grid twice, but both objections (*a flat lattice over
+the whole window does not move with the cloud, so it fights the depth it is supposed to
+establish*, and a ground plane is *a permanent floor under a corpus that has no floor*) are
+about a screen-space lattice or a floor, and a world-space cage snapped to the camera is
+neither. It rotated, it parallaxed, and it gave the camera something to move against.
 
-**Its levels are literals in RGB565, and that is a bug fix.** The first version picked one
-grey-blue and scaled it by depth — 0.07 of (26, 34, 52) is (1.7, 2.3, 3.5), which is fine in
-24-bit and is `0x0000` after the round trip through five bits of blue. The grid was not faint
-on the panel, it was *absent*, and it was absent at 0.10 too. There are now four hand-picked
-entries whose blue channel is 1, 2, 3 and 4 of 31 — the whole usable range between invisible
-and noticeable — and depth chooses between them rather than multiplying anything.
+It went anyway, on the owner's look, and the reason is the one this band keeps teaching: a
+permanent thing that does not mean anything is the same fault as the roster, one step
+further from the birds. It also cost two rounds of work first — hand-picked RGB565 levels,
+because scaling a dark grey-blue by depth rounded it to black on the panel; then a per-frame
+line count, because a fixed cage ran out inside the frame at the far end of the dolly. Both
+were real fixes to a thing that should not have been there. The code is out of
+`src/galaxy.cpp` and `tools/preview_galaxy.py` entirely, along with `projectFront()`, which
+existed because lattice lines pass through the camera and nothing else in the picture does.
 
-`tools/preview_galaxy.py` drew that invisible grid beautifully, because it wrote 24-bit
-colour. It now puts **every** colour through 565 the way the hardware does, which is the
-reason this class of mistake cannot hide in it again. If a mark would round to black on the
-panel, the preview shows black.
+One finding survives it and is worth keeping: **the preview puts every colour through 565
+the way the hardware does.** It drew that invisible grid beautifully in 24-bit, which is how
+a mark that rounds to black on the panel got shipped. If a colour would round to black on
+the panel, the preview now shows black.
 
-It is snapped to the camera in whole `GRID_STEP`s rather than pinned to the origin, so it is
-effectively infinite — the camera can travel anywhere in the corpus and the grid is always
-around it, sliding by in step increments. That sliding *is* the parallax; a lattice fixed to
-the origin runs out the moment the camera leaves the middle. `GRID_AMP` is scaled by depth so
-only the near lines register, and it is the dial if the reference ever starts competing with
-the song.
+Three details of the struck cross are load-bearing, and all three come from GridBurst:
 
-Its lines pass through the camera, which nothing else in the picture does, so it needs
-`projectFront()` — a perspective divide at or behind the near plane turns a line inside out
-rather than clipping it.
-
-Two details of that are load-bearing and both come straight from GridBurst:
-
-- **The reach is quoted against the view, not the world.** `STRIKE_REACH` is 1.2 of the
-  band's visible half-height in *pixels*; the rules' directions are world axes, so they
-  turn with the corpus, but their length does not change when the camera dollies. A fixed
-  world length is only right at one zoom, and this camera moves.
+- **The reach is quoted against the view, not the world.** `STRIKE_REACH` is 1.0 of the
+  band's *diagonal*, in pixels; the rules' directions are world axes, so they turn with the
+  corpus, but their length does not change when the camera dollies. A fixed world length is
+  only right at one zoom, and this camera moves. The diagonal rather than the half-height
+  because a rule that stops inside the picture is a cross sitting on a dot, not a grid line
+  — it has to leave the frame from anywhere in it, at any angle.
 - **The colour is held at strike time.** A cross outlives its note by more than a second,
   and re-resolving the hue per frame would have it reporting on a bird that had stopped.
+- **One cross per bird.** A bird that starts another song refreshes its own strike rather
+  than adding a second set of rules through nearly the same place, which reads as one badly
+  drawn cross. Six live strikes, which is more than the eight-voice pool can usefully start
+  at once.
 
-Strikes closer than `STRIKE_MERGE` refresh one cross rather than drawing two — a duet
-otherwise lays two crosses whose rules lie almost on top of each other, which reads as one
-badly drawn cross.
-
-**The roster dots carry a memory, so none of them is inert.** They were drawn at one fixed
-brightness, which meant a bird that had not had a Poisson arrival in two minutes sat there
-at full strength doing nothing — a scatter of marks that never changed. Brightness and size
-now follow how recently that species sang, squared, decaying to a floor over
-`ROSTER_MEMORY_MS`. They are also deduplicated by species: the two individuals of one
-species share an island, so drawing both put two dots in the same place.
+They are also faint on purpose: at full strength the scaffolding overlaid the song it was
+supposed to be a reference for, so `STRIKE_AMP` holds it at 30 % and the dashes are sparse
+(2 on, 7 off).
 
 **The camera dollies as well as pans.** `CAM_DIST_NEAR` while anything is singing,
 `CAM_DIST_IDLE` between songs, eased slower than the pan so a push-in reads as a push-in
 rather than as the picture changing size.
 
-The band went through two more rounds after the strikes went in, both on the owner's look
-and both worth recording because they were the same mistake twice:
-
-- **The roster is gone, at the third attempt.** Drawn whole, then as a faint bed, then as
-  the roster; then the roster dots were faded by how recently their bird sang. Every version
-  had the same fault in a smaller form — marks sitting there not meaning anything — and
-  fading did not fix it, because a dot on its way out still reads as a dot doing nothing.
-  There is no static layer at all now. Between songs the band is dark, which is the correct
-  picture of nothing happening; trails last about three seconds and songs arrive about every
-  two, so it is rarely empty for long.
-- **The rules were too strong and stopped inside the frame.** A rule with visible ends is a
-  cross sitting on a dot, not a grid line; and at full strength the scaffolding overlaid the
-  song it was supposed to be a reference for. `STRIKE_REACH` is now the band's diagonal, so
-  a rule always leaves the picture, `STRIKE_AMP` holds it at 30 %, and the dashes are
-  sparser (2 on, 7 off).
-
 **The fit is measured in screen space, on both axes, over the current song only.** Two
 corrections live in that sentence. Solving it as a world radius against the half-*height*
 meant a broadside gesture — which is exactly what the yaw steering works to produce — was
-fitted to the short axis of a 310 x 156 band and used a third of the long one. And measuring
+fitted to the short axis of a 310 x 147 band and used a third of the long one. And measuring
 over every live trail point included the *previous* song, still sitting in the ring a long
 way off, which drove the distance to nearly twice what it wanted and shrank a growing song
 instead of following it; the walk now stops at the first `brk`. The cost of screen space is
@@ -286,14 +285,17 @@ small squiggle in a large dark rectangle, which is exactly what the band is for 
 A median song now sweeps most of the way across; long ones run off the frame, which is fine
 because the camera holds the head and the head is the part worth seeing.
 
-Two things were added with the strikes: the cross now **follows its bird** rather than staying
-where the song started — GridBurst had to make the same change once its knots could move,
-since a strike that keeps old coordinates ends up ruling lines through empty space — and the
-head bead has a **halo**, three concentric dimming spots under it. With no bloom pass to
-spend on a panel, that is the whole trick for making a mark read as a light.
+Two more things: the cross **follows its bird** rather than staying where the song started —
+GridBurst had to make the same change once its knots could move, since a strike that keeps
+old coordinates ends up ruling lines through empty space — and the head bead has a **halo**,
+three concentric dimming spots under it. With no bloom pass to spend on a panel, that is the
+whole trick for making a mark read as a light.
 
-**Nothing about the band has been seen on hardware.** The preview settles composition and
-says nothing about how that panel treats a thin dark-green line at an angle.
+**Almost nothing about the band has been seen on hardware.** Both boards have been run and
+draw something; what neither has settled is how the panels treat a thin dark line at an
+angle, which the preview cannot answer. The one measurement to come out of looking was that
+the lattice registered on the Fire and did not on the CoreS3 (see "Current state") — the
+lattice is gone, and that difference is still the open question about the CoreS3's panel.
 
 `chorusSpeciesForTag()` connects a voice to its island, and can be stale by one bird: a
 song player holds a *copy* of its bird, and `rollRoster()` can replace a roster entry
@@ -309,11 +311,16 @@ two rules with no rank in particular.
 Now every piece of text is in one filled 36 px block at the top, in falling order of
 importance: the bird's name at size 2, then slot / mode / roster with the two load figures
 opposite, then volume as the block's own 2 px bottom edge rather than a widget. The band
-gets 158 px instead of 124.
+gets 149 px instead of 124.
 
-The band has to stop above `TOUCH_HIT_Y` (200 in include/buttons.h). The touch target is
-deliberately taller than the drawn strip, so a band running past that line would turn a
-tap on the picture into a button press. It ends at 197.
+**The band is the same distance from the text above it as from the buttons below it** —
+`GAP` in src/ui.cpp, 12 px on both sides. It used to be 2 above and 13 below, which reads
+as the picture being badly placed rather than as a hierarchy. Symmetry costs the band 9 px,
+and 12 is nearly the largest gap available: everything between the volume edge (38) and the
+strip (211) is gap, band, gap, so each px of gap costs the band two, and the band still has
+to end above `TOUCH_HIT_Y` (200 in include/buttons.h) — the touch target is deliberately
+taller than the drawn strip, so a band running past that line would turn a tap on the
+picture into a button press. The band runs 50 to 198, and the plot inside it is 310 × 147.
 
 `drawReadouts()` repaints the two live figures every frame straight over themselves, with
 an opaque background and a fixed-width format — right-aligned text that shrinks would
@@ -614,19 +621,47 @@ python3 tools/generate_assets.py --inventory ../Lyrebird/data/learned-inventory-
 
 Headers are committed; the script is only re-run when the inventory changes.
 
+## The page's identity — icons, SEO, and the one thing not settled
+
+The address is **`https://m5lyrebird.variable.gallery`**, in `SITE_URL`
+(web/src/lib/seo/index.ts) and repeated as literals in `web/static/robots.txt` and
+`sitemap.xml`, which cannot import anything. It replaces the parent project's URL, which
+this page used to claim as its own canonical — so the canonical link, `og:url` and every
+JSON-LD `@id` said "browser instrument" while serving a firmware flasher. **The deploy does
+not exist yet**; the DNS has to be pointed at Railway for any of it to resolve.
+
+The icons are the parent's, copied from `../Lyrebird/app/static` and
+`.../static/brand`: `favicon.svg`, `favicon.ico` (16/32/48), `apple-touch-icon.png` (180),
+`icon-192.png`, `icon-512.png`. They replace CYD-Physarum's, which this repo was still
+serving. The mark is a syrinx dividing into two unequal bronchi — the same mechanism the
+firmware integrates — so it is the same mark on the board's page as on the instrument's.
+Order in `app.html` matters: a browser takes the *last* icon it understands, so the SVG is
+first and `alternate icon` carries the fallback.
+
+`web/static/og-card.png` is generated by `tools/make_og_card.py`, which **reads the figures
+out of `include/bird_data.h` and `include/galaxy_data.h`** rather than repeating them, so
+the card cannot end up quoting a corpus the firmware does not sing. It needs Pillow. Two
+things to know before regenerating it:
+
+- The type is a substitute. The house pairing is IBM Plex with a bookish serif for the
+  wordmark; none of those are installed here, so it draws Noto Serif and Liberation
+  Sans/Mono. `FONTS` at the top of the script is where that is fixed.
+- The parent's own `og-card.png` was **not** reused, and must not be: it carries the
+  browser instrument's figures (444,213 syllables, 2,650 species), which are not this
+  firmware's.
+
+`robots.txt` allows the AI crawlers on purpose, the same decision the parent made, and
+disallows `/firmware/` and `/_app/` — 1.9 MB binaries and hashed JavaScript are not
+readable content. `llms.txt` is the plain-text summary written for those crawlers, and it
+leads with the three things about this project that get got wrong: no samples, no
+streaming, and the screen is not a spectrogram.
+
 ## Known leftovers
 
-- `web/static/favicon.{ico,png,svg}` and `apple-touch-icon.png` are byte-identical to
-  CYD-Physarum's. So is the vestigial empty `web/static/media/`.
-- `SITE_URL` in `web/src/lib/seo/index.ts` is `https://lyrebird.variable.gallery`, which
-  is **the parent project's site** — the same URL `PARENT_PROJECT.url` points at. So the
-  page's canonical link, `og:url` and JSON-LD `@id` all currently claim to be the browser
-  instrument. Needs this site's own URL once the Railway deploy exists.
-- `OG_IMAGE` / `OG_IMAGE_ALT` are exported and never imported; `web/static/og.jpg` does
-  not exist and `+page.svelte` emits no `og:image`. Add a photo and the tags, or drop the
-  exports.
-- The page's copy explains the Fire's bridge as a CP2104, which is right for older units
-  and not for the v2.7 on this desk.
+- `tools/preview_galaxy.py` solves the camera distance the way the firmware used to, so
+  its framing is not the board's. See "The galaxy".
+- `docs/band-preview.png` in the README is a host render, not a photograph. There is still
+  no photograph of either board in this repository.
 
 ## Out of scope (deliberately)
 

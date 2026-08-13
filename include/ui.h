@@ -1,16 +1,17 @@
 // The screen: chrome, and a band that draws the chorus.
 //
-// The band has two pictures, chosen at build time by LYREBIRD_UI_GALAXY:
+// The band has two pictures, chosen at build time by LYREBIRD_UI_GALAXY. Both
+// boards ship with the flag at 1, so the second one is what you get:
 //
-//   sweeping spectrogram (the default, and the Fire) — every frame plots each
-//     sounding voice at its current pitch on a log axis (250 Hz - 10 kHz),
-//     coloured by which individual is singing and dimmed by its envelope, into a
-//     playhead column that wraps around the band. Syllable contours draw
-//     themselves as the notes sound, so a duet is two traces and the all-birds
-//     slot a field of them. It says what pitch is sounding now.
+//   sweeping spectrogram (flag at 0) — every frame plots each sounding voice at
+//     its current pitch on a log axis (250 Hz - 10 kHz), coloured by which
+//     individual is singing and dimmed by its envelope, into a playhead column
+//     that wraps around the band. Syllable contours draw themselves as the notes
+//     sound, so a duet is two traces and the all-birds slot a field of them. It
+//     says what pitch is sounding now.
 //
-//   the corpus as a point cloud (the CoreS3) — see galaxy.h. It says which of
-//     2423 species is sounding, and where that species sits in the corpus.
+//   the corpus as a point cloud (flag at 1, both boards) — see galaxy.h. It says
+//     which of 2423 species is sounding, and where that species sits in the corpus.
 //
 // Nothing here clears the band except uiFullRedraw(). For the sweep that is
 // load-bearing — the sweep *is* the history — so partial updates repaint text

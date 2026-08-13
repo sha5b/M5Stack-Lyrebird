@@ -34,20 +34,29 @@ static int SCR_H = 240;
 #define SUB_Y 24             // slot + mode + roster, and dsp / voices at the right
 #define VOL_Y HEAD_H         // the block's bottom edge *is* the volume readout
 #define VOL_H 2
+// The bottom strip: the hint line on a board with real buttons, three labelled
+// touch zones on one without. Same region either way. It is pinned to the bottom of
+// the screen (BAR_Y + BAR_H = 240), and it must stay clear of TOUCH_HIT_Y (200) — the
+// touch target is deliberately taller than the drawing, so the band has to end above
+// it or a tap on the picture presses a button.
+#define BAR_Y 211
+#define BAR_H 29
+
 #define BAND_X 4
-#define BAND_Y (VOL_Y + VOL_H + 2)
+// The band sits the same distance from the text above it as from the buttons below it,
+// because two different gaps around one picture read as the picture being badly placed
+// rather than as a hierarchy. GAP is that distance, and 12 is very nearly the largest
+// it can be: everything between the volume edge and the strip is gap, band, gap, so
+// each px of gap costs the band two, and the band still has to end above TOUCH_HIT_Y.
+// It ends at 198.
+#define GAP 12
+#define BAND_Y (VOL_Y + VOL_H + GAP)
 #define BAND_W 312
-#define BAND_H 158
+#define BAND_H (BAR_Y - GAP - BAND_Y)
 #define PLOT_X (BAND_X + 1)  // inner plot area, inside the frame
 #define PLOT_Y (BAND_Y + 1)
 #define PLOT_W (BAND_W - 2)
 #define PLOT_H (BAND_H - 2)
-// The bottom strip: the hint line on a board with real buttons, three labelled
-// touch zones on one without. Same region either way. It must stay clear of
-// TOUCH_HIT_Y (200) — the touch target is deliberately taller than the drawing,
-// so the band has to end above it or a tap on the picture presses a button.
-#define BAR_Y 211
-#define BAR_H 29
 
 // PLOT_W must stay a whole number of steps, or the playhead overruns the frame
 // on the last column of a sweep.

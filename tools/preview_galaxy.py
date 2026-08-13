@@ -4,15 +4,19 @@
 Re-implements the arm model — the growth, the pitch bend, the twist, the
 projection and the fade — against the real include/galaxy_data.h, drives it with
 a stand-in chorus, and writes a PNG. The point is tuning: GROW, WIGGLE, TWIST_AMP
-and FILL decide whether an arm is a gesture or a scribble, and finding that out by
+and ZOOM decide whether an arm is a gesture or a scribble, and finding that out by
 reflashing a board is a slow way to work.
 
+One thing here is *behind* src/galaxy.cpp: the camera distance is still solved as a
+world radius against the band's half-height, where the firmware measures the projected
+extent on both axes. So composition transfers and framing no longer does exactly.
+
 Every colour is put through **RGB565**, the same five/six/five bits the panel has,
-because writing 8-bit colour here once hid a real bug: the lattice was drawn by scaling
-a dark grey-blue down for depth, which came to (1.7, 2.3, 3.5) — fine in 24-bit, and
-literally 0x0000 after the round trip. The grid was not faint on the device, it was
-absent, and this file drew it beautifully. Anything dark is now quantised the way the
-hardware quantises it.
+because writing 8-bit colour here once hid a real bug. A faint lattice, since removed,
+was drawn by scaling a dark grey-blue down for depth: (1.7, 2.3, 3.5), which is fine in
+24-bit and literally 0x0000 after the round trip. It was not faint on the device, it was
+absent — and this file drew it beautifully. Anything dark is now quantised the way the
+hardware quantises it, so that class of mistake cannot hide here again.
 
 Same standing as tools/verify_syrinx.py otherwise — a host re-implementation of the
 maths, not a build of the firmware. The chorus here is a stand-in (evenly spaced songs,
@@ -36,7 +40,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Kept in step with src/galaxy.cpp and src/ui.cpp by hand. If a figure here
 # disagrees with the firmware, the firmware is right and this file is stale.
-BAND_W, BAND_H = 310, 156   # PLOT_W, PLOT_H in src/ui.cpp
+BAND_W, BAND_H = 310, 147   # PLOT_W, PLOT_H in src/ui.cpp
 FPS = 25                    # FRAME_MS in src/main.cpp
 TURN_X_S, TURN_Y_S = 197.0, 131.0
 CAM_DIST_NEAR = 1.5
@@ -58,15 +62,6 @@ TWIST_RATE = 0.16
 DOT_R_QUIET = 0.55
 DOT_R_LOUD = 3.0
 BEAD_R = 3.4
-ROSTER_R = 1.8
-ROSTER_ENV_MAX = 0.30
-ROSTER_MEMORY_MS = 9000
-GRID_STEP = 0.55
-GRID_N = 2
-GRID_SEGS = 8
-GRID_LEVELS = 4
-# Hand-picked in 565 terms, matching src/galaxy.cpp: blue channel 1..4 of 31.
-GRID_RAMP = [(0, 4, 8), (4, 8, 16), (8, 12, 24), (12, 16, 33)]
 FIT_FRAC = 0.80
 STRIKES = 6
 STRIKE_REACH = 1.0
@@ -341,35 +336,6 @@ def render(trails, frame, cam, dist, strikes, yaw, pitch):
     def dim(c, amp):
         # Quantised, so a dim result that the panel would round to black shows as black.
         return q565(tuple(v * max(0.0, min(1.0, amp)) for v in c))
-
-    # the lattice, under everything: world-space, snapped to the camera in whole steps
-    base = [math.floor(cam[i] / GRID_STEP) * GRID_STEP for i in range(3)]
-    span = GRID_STEP * GRID_N
-    for axis in range(3):
-        b, c2 = (axis + 1) % 3, (axis + 2) % 3
-        for i in range(-GRID_N, GRID_N + 1):
-            for j in range(-GRID_N, GRID_N + 1):
-                p = [0.0, 0.0, 0.0]
-                p[b] = base[b] + i * GRID_STEP
-                p[c2] = base[c2] + j * GRID_STEP
-                prev = None
-                for k in range(GRID_SEGS + 1):
-                    p[axis] = base[axis] - span + 2 * span * k / GRID_SEGS
-                    dx, dy, dz = (p[0] - cam[0], p[1] - cam[1], p[2] - cam[2])
-                    z1 = -dx * say + dz * cay
-                    z2 = dy * sax + z1 * cax
-                    if dist + z2 < 0.35:
-                        prev = None
-                        continue
-                    X, Y, persp = project(*p)
-                    if prev:
-                        # Depth picks a level; it does not scale a colour. See q565.
-                        d = persp * dist / CAM_F
-                        lvl = max(0, min(GRID_LEVELS - 1,
-                                         int((d - 0.55) * GRID_LEVELS / 0.9)))
-                        wedge(prev[0], prev[1], 0.4, int(X), int(Y), 0.4,
-                              q565(GRID_RAMP[lvl]))
-                    prev = (int(X), int(Y))
 
     # the strikes, under everything: three world axes, length quoted in pixels
     reach = STRIKE_REACH * math.hypot(BAND_W, BAND_H)

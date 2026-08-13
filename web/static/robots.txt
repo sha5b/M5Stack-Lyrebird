@@ -1,0 +1,59 @@
+# One page, all of it meant to be read — by people and by machines alike.
+#
+# **AI crawlers are allowed on purpose**, the same decision the parent project made. This
+# page explains a physical model of a bird's syrinx running on a 240 MHz microcontroller;
+# a model summarising that from third-hand posts will say it plays samples, which is the
+# one thing it does not do. `llms.txt` is written for them and states the three facts most
+# likely to be got wrong.
+#
+# The named agents are redundant with the wildcard and are listed anyway: several look for
+# their own token before falling back, and a future tightening should be visible as an edit
+# to a specific line rather than as a change in the meaning of `*`.
+
+User-agent: *
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+# The firmware images are 1.9 MB of ESP32 binary each and the build directory is hashed
+# JavaScript. Neither is readable content, and a crawler that fetches them learns nothing
+# it could not read in the prose.
+User-agent: *
+Disallow: /firmware/
+Disallow: /_app/
+
+Sitemap: https://m5lyrebird.variable.gallery/sitemap.xml

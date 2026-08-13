@@ -14,7 +14,7 @@
 //
 // A camera inside the corpus, following whichever bird is singing.
 //
-// The band is 310 x 156 px. That is the whole design constraint and the two
+// The band is 310 x 147 px. That is the whole design constraint and the two
 // versions before this one both broke it:
 //
 //   the whole corpus, static   12724 marks accumulated into a brightness buffer.
@@ -23,30 +23,32 @@
 //                              were lost inside it.
 //   the corpus as a faint bed  the same marks, dim, under the arms. Better, and
 //                              still wrong: a ground made of twelve thousand dots
-//                              on a 156 px band is not a ground, it is grain.
+//                              on a 147 px band is not a ground, it is grain.
 //
 // A screen this small can hold a handful of marks that are each big enough to have
-// a shape. So the static layer is not the corpus, it is the *roster*: the two dozen
-// birds that can actually sing right now, one dim dot each. Twelve or so dots, not
-// twelve thousand. They also earn their place twice over — a camera with nothing
-// static in frame is a camera you cannot see moving, and without them the travel
-// between birds reads as marks appearing out of nowhere.
+// a shape. A third version tried the *roster* as the static layer — two dozen dots,
+// the birds that can sing right now — and that failed the same way; see "what is
+// *not* drawn" below. So nothing is drawn for a bird until it sings.
 //
-// Over that, the song being sung: a chain of stretched dots growing out of its own
-// bird's dot, fat where the note is loud and pinched where it is quiet, tapering
-// away behind. When another bird takes over, the camera swings across to it and
-// dollies in, and the roster slides past on the way — which is what shows the corpus
-// has a shape at all.
+// What there is, then, is the song being sung: a chain of stretched dots growing out
+// of its own species' place in the corpus, fat where the note is loud and pinched
+// where it is quiet, tapering away behind. When another bird takes over, the camera
+// swings across to it and dollies in.
 //
-// And under both, the grid — but only where something is singing. That is
-// GridBurst.svelte's finding, and it is worth quoting because it is the answer to
-// "can we have a faint 3D grid": *a flat lattice over the whole window does not move
-// with the cloud, so it fights the depth it is supposed to establish; a ground plane
-// is a permanent floor under a corpus that has no floor.* So each new song strikes a
-// cross of three axis-aligned rules through the bird that started it, which brighten
-// as the note arrives and run back out as it ends. The measured field appears around
-// the sound and dissolves after it, and the strongest lines on screen are always at
-// the place worth looking at.
+// And under it, the grid — but only where something is singing, which is
+// GridBurst.svelte's finding and worth quoting because it is the answer to "can we have
+// a faint 3D grid": *a flat lattice over the whole window does not move with the cloud,
+// so it fights the depth it is supposed to establish; a ground plane is a permanent
+// floor under a corpus that has no floor.* So each new song strikes a cross of three
+// axis-aligned rules through the bird that started it, which brighten as the note
+// arrives and run back out as it ends. The measured field appears around the sound and
+// dissolves after it, and the strongest lines on screen are always at the place worth
+// looking at.
+//
+// A standing world-space lattice was tried on top of that, on the theory that a moving
+// camera needs something static to move against. It went, on the owner's look: another
+// permanent thing that does not mean anything, which is the same fault as the roster
+// below, and a corpus is not a room.
 //
 // It stays accurate under all that. Every mark is a real measurement: the dot's
 // place is its species' place in the corpus, its distance from the middle is the f0
@@ -99,7 +101,7 @@
 //
 // Screen space rather than a world radius, and that is a correction. Solving
 // `radius * ZOOM * CAM_F / (FIT_FRAC * h/2)` quoted the fit against the half-*height*
-// alone, so on a 310 x 156 band a broadside gesture — which is what the yaw steering
+// alone, so on a 310 x 147 band a broadside gesture — which is what the yaw steering
 // works to produce — was fitted to the short axis and used a third of the long one.
 // Measuring the projected extent instead is naturally right on both axes and folds in
 // STRETCH_X without having to think about it. It costs being a feedback loop on last
@@ -118,7 +120,7 @@
 // Pixels per layout unit at the target's depth.
 //
 // Set so that *activity owns the screen*. A song is one to two layout units of
-// gesture, and this band is 310 x 156, so anything under about 140 leaves the thing
+// gesture, and this band is 310 x 147, so anything under about 140 leaves the thing
 // you are meant to be watching as a small squiggle in a large dark rectangle — which
 // is what it was at 78 and still was at 100. Long songs now run off the frame, which
 // is fine: the camera holds the head, and the head is the part worth seeing.
@@ -181,46 +183,18 @@
 
 // ---- what is *not* drawn --------------------------------------------------
 //
-// There is no static layer at all, at the third attempt. The corpus was drawn whole,
-// then as a faint bed, then as the roster — the two dozen birds that could sing — and
-// every version had the same fault in a smaller form: marks that sit there not
-// meaning anything. Fading the roster dots by how recently their bird sang did not
-// fix it either, because a dot on its way out still reads as a dot that is doing
-// nothing.
+// No bird is drawn until it sings, and it took three tries to get there. The corpus
+// was drawn whole, then as a faint bed, then as the roster — the two dozen birds that
+// could sing — and every version had the same fault in a smaller form: marks that sit
+// there not meaning anything. Fading the roster dots by how recently their bird sang
+// did not fix it either, because a dot on its way out still reads as a dot that is
+// doing nothing. A faint world-space lattice was the fourth try at the same idea — give
+// the camera something static to move against — and it went for the same reason.
 //
 // So the band shows only what is happening: songs, the crosses struck through them,
-// and the haloed bead at the note being sung. Between songs it goes dark, and that is
+// and the haloed bead at the note being sung. Between songs it goes black, and that is
 // the correct picture of nothing happening. Trails last about three seconds and songs
 // arrive about every two, so it is rarely empty for long.
-
-// ---- the lattice ----------------------------------------------------------
-//
-// A very faint 3D grid, and the distinction from what GridBurst rejected matters:
-// that was a *screen-space* lattice, which does not move with the cloud and so fights
-// the depth it is meant to establish. This one is in world space. It rotates, it
-// parallaxes, and it is the thing the camera moves against — which only became worth
-// having once the camera started moving at all.
-//
-// The lattice is snapped to the camera in whole steps rather than pinned to the origin,
-// so it is effectively infinite: the camera can travel anywhere in the corpus and the
-// grid is always around it, sliding by in step increments as it goes. That sliding *is*
-// the parallax; a lattice fixed to the origin would run out as soon as the camera left
-// the middle.
-//
-// Faint to the point of being barely there, but **not by multiplying a dark colour
-// down**, which is how the first version of this came out invisible. The panel is
-// RGB565: five bits of blue, so the smallest step it can show at all is 8/255. Taking a
-// grey-blue of (26, 34, 52), converting to 565, and scaling it by 0.07 for depth gives
-// (1.7, 2.3, 3.5) — and every one of those truncates to zero on the way back. The grid
-// was not faint, it was black, and it was black at 0.10 too.
-//
-// So the levels are hand-picked in 565 terms instead: four entries whose blue channel is
-// 1, 2, 3 and 4 of 31, which is the whole usable range between invisible and noticeable.
-// Depth chooses between them. Nothing is multiplied.
-#define GRID_STEP 0.55f   // lattice spacing, layout units
-#define GRID_N 2          // lattice lines each side of the camera, per axis
-#define GRID_SEGS 8       // segments per line: enough to survive perspective
-#define GRID_LEVELS 4
 
 // ---- the strike (GridBurst) -----------------------------------------------
 
@@ -333,9 +307,6 @@ static float s_cax = 1, s_sax = 0, s_cay = 1, s_say = 0;
 // When each tag last sounded, for the framing. 0 = never.
 static uint32_t s_sangMs[TRAIL_TAGS];
 
-// The lattice's four depth levels, built once. See the note on GRID_LEVELS for why
-// these are literals in 565 terms rather than a colour scaled by a float.
-static uint16_t s_grid[GRID_LEVELS];
 
 // ---- helpers --------------------------------------------------------------
 
@@ -394,23 +365,6 @@ static inline void project(float x, float y, float z, float& outX, float& outY,
     outX = (float)s_w * 0.5f + x1 * ZOOM * STRETCH_X * k;
     outY = (float)s_h * 0.5f - y2 * ZOOM * k;
     outK = k;
-}
-
-/**
- * As project(), but false when the point is at or behind the near plane — where the
- * perspective divide flips a line inside out instead of clipping it. The lattice needs
- * this because its lines pass through the camera; nothing else in the picture does.
- */
-static inline bool projectFront(float x, float y, float z, float& outX, float& outY,
-                                float& outK) {
-    const float dx = x - s_camX;
-    const float dy = y - s_camY;
-    const float dz = z - s_camZ;
-    const float z1 = -dx * s_say + dz * s_cay;
-    const float z2 = dy * s_sax + z1 * s_cax;
-    if (s_camDist + z2 < 0.35f) return false;
-    project(x, y, z, outX, outY, outK);
-    return true;
 }
 
 /**
@@ -508,13 +462,6 @@ void galaxyInit(int x, int y, int w, int h) {
     // for the size with the bandwidth. If it will not fit, galaxyFrame() becomes a
     // no-op rather than a crash — the band stays black and everything else on the
     // screen still works.
-    // Blue channel 1, 2, 3, 4 of 31. Checked against color565(): every one of these
-    // survives the round trip, which is the whole point of writing them out.
-    s_grid[0] = M5.Display.color565(0, 4, 8);
-    s_grid[1] = M5.Display.color565(4, 8, 16);
-    s_grid[2] = M5.Display.color565(8, 12, 24);
-    s_grid[3] = M5.Display.color565(12, 16, 33);
-
     s_canvas.setPsram(false);
     s_canvas.setColorDepth(16);
     s_ready = s_canvas.createSprite(s_w, s_h) != nullptr;
@@ -716,59 +663,9 @@ void galaxyFrame() {
         s_camDist += (CAM_DIST_IDLE - s_camDist) * DOLLY_EASE;
     }
 
-    // ---- draw: the lattice, under everything -------------------------------
     s_canvas.fillSprite(TFT_BLACK);
 
-    {
-        // Snap the lattice to the camera in whole steps: the grid is always around
-        // wherever the camera has got to, and slides by as it travels.
-        const float base[3] = {
-            floorf(s_camX / GRID_STEP) * GRID_STEP,
-            floorf(s_camY / GRID_STEP) * GRID_STEP,
-            floorf(s_camZ / GRID_STEP) * GRID_STEP,
-        };
-        const float span = GRID_STEP * (float)GRID_N;
-
-        for (int axis = 0; axis < 3; axis++) {
-            const int b = (axis + 1) % 3;
-            const int c = (axis + 2) % 3;
-            for (int i = -GRID_N; i <= GRID_N; i++) {
-                for (int j = -GRID_N; j <= GRID_N; j++) {
-                    float p[3];
-                    p[b] = base[b] + (float)i * GRID_STEP;
-                    p[c] = base[c] + (float)j * GRID_STEP;
-
-                    float prevX = 0, prevY = 0;
-                    bool havePrev = false;
-                    for (int k = 0; k <= GRID_SEGS; k++) {
-                        p[axis] = base[axis] - span
-                                  + 2.0f * span * (float)k / (float)GRID_SEGS;
-                        float X, Y, persp;
-                        if (!projectFront(p[0], p[1], p[2], X, Y, persp)) {
-                            havePrev = false;
-                            continue;
-                        }
-                        if (havePrev) {
-                            // Depth is the only thing keeping this readable: without it
-                            // the far lattice is as strong as the near one and the band
-                            // turns to mesh. It picks a level, it does not scale a colour.
-                            float d = persp * s_camDist / CAM_F;  // 1 at the target depth
-                            int lvl = (int)((d - 0.55f) * (float)GRID_LEVELS / 0.9f);
-                            if (lvl < 0) lvl = 0;
-                            else if (lvl >= GRID_LEVELS) lvl = GRID_LEVELS - 1;
-                            s_canvas.drawLine((int)prevX, (int)prevY, (int)X, (int)Y,
-                                              s_grid[lvl]);
-                        }
-                        prevX = X;
-                        prevY = Y;
-                        havePrev = true;
-                    }
-                }
-            }
-        }
-    }
-
-    // ---- draw: the strikes, over the lattice --------------------------------
+    // ---- draw: the strikes ---------------------------------------------------
     // Three axis-aligned rules through each live strike. The rules are world axes, so
     // they turn with the corpus and read as depth, but their *length* is quoted in
     // pixels against the band — GridBurst's `reachOfView`, and the reason a strike is
