@@ -67,6 +67,20 @@ export const OG_IMAGE_ALT =
     'faintly ruled paper, with its figures: 2423 species, 12724 syllables, 2442 songs, ' +
     'flashed from the browser.';
 
+// The clip of both boards, in web/static/. Recorded on a desk, so it is the one asset here
+// that is evidence rather than description — which is also why it is the `og:video`: a
+// social card that plays 28 seconds of the thing beats one that describes it.
+export const VIDEO = {
+    url: `${SITE_URL}/lyrebird-boards.mp4`,
+    type: 'video/mp4',
+    width: 1280,
+    height: 720,
+    duration: 28,
+    poster: `${SITE_URL}/lyrebird-boards-poster.jpg`,
+    alt: 'A red M5Stack Fire and a grey CoreS3 side by side on a desk, both showing ALL BIRDS '
+        + 'and a thread of pale dots drawing itself across a dark band as a bird sings.'
+};
+
 /**
  * One `@graph` rather than several disconnected blocks, so the artist, the page, the
  * firmware and the work it ports are stated as one set of entities whose `@id`s point at
@@ -120,7 +134,17 @@ export function jsonLd(): string {
                     'Reads the chip off the board and picks the matching image',
                     'No samples: 2423 species are synthesized on the device'
                 ],
-                image: OG_IMAGE
+                image: OG_IMAGE,
+                video: {
+                    '@type': 'VideoObject',
+                    name: 'Lyrebird on an M5Stack Fire and a CoreS3',
+                    description: VIDEO.alt,
+                    contentUrl: VIDEO.url,
+                    thumbnailUrl: VIDEO.poster,
+                    encodingFormat: VIDEO.type,
+                    width: VIDEO.width,
+                    height: VIDEO.height
+                }
             },
             {
                 '@type': 'SoftwareSourceCode',

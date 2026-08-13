@@ -33,24 +33,32 @@ firmware as PROGMEM headers.
   `web/static/firmware/`.
 - Webflasher: `cd web && npm run check` and `npm run build` (static site into
   `web/build/`).
-- **Hardware, precisely.** A CoreS3 has been flashed and photographed running. It boots,
-  draws its chrome, and reports `1/2424 chorus 24 birds, all species`, `voices 0/8`,
-  `dsp 16%` and `vol 76%`, with the three touch zones drawn along the bottom. So: the
-  2424-slot dial is live, the touch strip renders, and **`audioGetLoad()` reads 16 %** —
-  which retires the CPU-headroom worry, since the crackle line is around 90 %.
+- **Hardware: both boards run this, and there is a recording of them doing it.**
+  `web/static/lyrebird-boards.mp4` is 28 s of a Fire and a CoreS3 side by side on the
+  all-birds slot, 1280 x 720 at 30 fps with an audio track — the two of them, on a desk,
+  not a render. It is the page's hero and the README's, and it is the only artefact in
+  this repo that is evidence rather than description.
 
-  That photo is the pre-galaxy image, and a photograph says nothing about sound.
-  **Nothing has been listened to** — whether either board sings, how loud it is, and
-  whether the crackle and hiss work below actually fixed anything are all still open.
+  Read off its frames, which is where these figures come from:
 
-  A Fire has since been flashed and run as well. **One thing was seen and it matters
-  beyond the feature it came from**: while the standing lattice existed, it registered on
-  the Fire and did not register on the CoreS3, with the same code and no board case
-  anywhere in that path (owner's eye, both boards on the desk). Either the CoreS3 was
-  running an older image, or **its panel does not resolve a blue of 1–4 of 31 the way the
-  Fire's does** — which is a fact about how faint anything on that board may be, not about
-  the lattice. It is unsettled and the lattice is gone, so the way to settle it now is to
-  reflash both from `web/static/firmware/` and compare something else faint.
+  | | Fire | CoreS3 |
+  |---|---|---|
+  | header | `ALL BIRDS`, `1/2424  chorus  24 birds` | the same |
+  | `dsp` | 1 % with nothing sounding | 21 % with one voice |
+  | volume | 70 % | 100 % |
+  | bottom strip | the hint line over three real buttons | three labelled touch zones |
+
+  So the 2424-slot dial, the header block, the band and the touch strip are all live on
+  both boards, and the CPU-headroom worry is retired twice over — the crackle line is
+  around 90 %.
+
+  **What the clip does not settle.** The sound on it has not been measured, only made:
+  whether the Fire's 8-bit noise floor, the crackle work and the idle-hiss work below hold
+  up is a judgement by ear, and nothing here is a measurement of the analog output. Two
+  earlier observations are also still open — while the standing lattice existed it
+  registered on the Fire and not on the CoreS3, which if it was not simply a stale image
+  says **the CoreS3's panel does not resolve a blue of 1–4 of 31 the way the Fire's does**.
+  The lattice is gone, so settling that now needs something else faint to compare.
 - **The merged images in `web/static/firmware/` are built by hand and go stale silently.**
   They are not a build product of `pio run`, so a `pio run` that succeeds proves nothing
   about what the page will flash. This has already cost one confusing session: the CoreS3
@@ -120,6 +128,11 @@ src/main.cpp              M5 bring-up, button semantics, frame pacing
 scripts/build-firmware.sh pio build + esptool merge_bin + manifests
 web/                      SvelteKit + esptool-js flasher (from CYD-Physarum)
 web/src/lib/galaxy.ts     the page's backdrop; corpus.ts is its generated data
+web/src/lib/seo/          title, card, JSON-LD graph, og:video
+web/static/               icons and og-card.png from the parent's brand set, robots.txt,
+                          sitemap.xml, llms.txt, and lyrebird-boards.mp4 — the clip of
+                          both boards, with its poster and caption track
+docs/band-preview.png     the band from tools/preview_galaxy.py, for the README
 ```
 
 ## The galaxy — the page's backdrop and the board's arms
@@ -291,11 +304,11 @@ old coordinates ends up ruling lines through empty space — and the head bead h
 three concentric dimming spots under it. With no bloom pass to spend on a panel, that is the
 whole trick for making a mark read as a light.
 
-**Almost nothing about the band has been seen on hardware.** Both boards have been run and
-draw something; what neither has settled is how the panels treat a thin dark line at an
-angle, which the preview cannot answer. The one measurement to come out of looking was that
-the lattice registered on the Fire and did not on the CoreS3 (see "Current state") — the
-lattice is gone, and that difference is still the open question about the CoreS3's panel.
+**The band has now been seen on both boards** — `web/static/lyrebird-boards.mp4`, see
+"Current state". The threads read as threads and the bead reads as a light at 310 x 147 on
+a real panel, which is the thing the preview could not answer. What it still cannot answer
+is the faint end: the lattice registered on the Fire and not on the CoreS3 before it was
+removed, so how dark a mark that panel can hold is unmeasured.
 
 `chorusSpeciesForTag()` connects a voice to its island, and can be stale by one bird: a
 song player holds a *copy* of its bird, and `rollRoster()` can replace a roster entry
@@ -649,6 +662,14 @@ things to know before regenerating it:
 - The parent's own `og-card.png` was **not** reused, and must not be: it carries the
   browser instrument's figures (444,213 syllables, 2,650 species), which are not this
   firmware's.
+
+`web/static/lyrebird-boards.mp4` (10 MB) is the clip of the two boards, with
+`lyrebird-boards-poster.jpg` beside it so a visitor pays for a poster rather than 10 MB
+before anything appears, and `lyrebird-boards.vtt` beside that. The track exists because
+the clip has sound and no speech: one cue for the whole length describing what the sound
+*is* is the accessible answer, where timing cues would be a transcription of a Poisson
+process. The clip is also the `og:video` and a `VideoObject` in the JSON-LD graph, so a
+social card plays the boards instead of describing them.
 
 `robots.txt` allows the AI crawlers on purpose, the same decision the parent made, and
 disallows `/firmware/` and `/_app/` — 1.9 MB binaries and hashed JavaScript are not

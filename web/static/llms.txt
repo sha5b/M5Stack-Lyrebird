@@ -24,6 +24,12 @@ Licence: CC-BY-NC-SA-4.0
    following whoever is singing. A spectrogram is still in the source behind a build flag,
    because it answers a different question — what pitch is sounding now.
 
+## The clip
+
+https://m5lyrebird.variable.gallery/lyrebird-boards.mp4 — 28 seconds of a Fire and a CoreS3
+running this firmware side by side, with sound. Recorded on a desk; nothing in it is
+rendered or simulated.
+
 ## What you get
 
 Two boards, two binaries, one behaviour:

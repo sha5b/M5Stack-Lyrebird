@@ -27,6 +27,16 @@
 
 ---
 
+<p align="center">
+  <a href="web/static/lyrebird-boards.mp4">
+    <img src="web/static/lyrebird-boards-poster.jpg" alt="A red M5Stack Fire and a grey CoreS3 side by side on a desk, both showing ALL BIRDS and a thread of pale dots on a dark band" width="760">
+  </a>
+  <br>
+  <sub><b><a href="web/static/lyrebird-boards.mp4">▶ 28 seconds of both boards, with sound</a></b>
+  — the Fire on the left with its three buttons, the CoreS3 on the right with the same three
+  as touch zones. Nothing in this clip is a render.</sub>
+</p>
+
 The device boots into **all birds**: a rolling sample of twelve species, two individuals of
 each, arriving as a Poisson process, with a 25 % chance a conspecific answers. The sample
 turns over about every four minutes, so the slot is a tour of the corpus rather than a fixed

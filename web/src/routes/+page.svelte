@@ -23,6 +23,7 @@
 		OG_IMAGE_WIDTH,
 		OG_IMAGE_HEIGHT,
 		OG_IMAGE_ALT,
+		VIDEO,
 		ARTIST,
 		PARENT_PROJECT,
 		REPO_URL,
@@ -280,6 +281,11 @@
 	<meta name="twitter:description" content={SITE_DESCRIPTION} />
 	<meta name="twitter:image" content={OG_IMAGE} />
 	<meta name="twitter:image:alt" content={OG_IMAGE_ALT} />
+	<meta property="og:video" content={VIDEO.url} />
+	<meta property="og:video:secure_url" content={VIDEO.url} />
+	<meta property="og:video:type" content={VIDEO.type} />
+	<meta property="og:video:width" content={String(VIDEO.width)} />
+	<meta property="og:video:height" content={String(VIDEO.height)} />
 	{@html LD_JSON}
 </svelte:head>
 
@@ -311,6 +317,36 @@
 			comes past you rather than sitting still. Step off that with a button and you get one
 			species, alone. Plug a Fire or a CoreS3 in and flash it from this page.
 		</p>
+
+		<!-- Both boards, running this firmware, with the sound they were making. It is the
+		     one thing on the page that is not a claim: 28 s of hardware on a desk.
+		     `preload="metadata"` so a visitor pays for the poster and not the 10 MB, and
+		     no autoplay, because it has sound and nobody asked for it yet. -->
+		<figure class="demo">
+			<video
+				controls
+				playsinline
+				preload="metadata"
+				poster="{base}/lyrebird-boards-poster.jpg"
+				width="1280"
+				height="720"
+			>
+				<source src="{base}/lyrebird-boards.mp4" type="video/mp4" />
+				<!-- No speech in the clip, so the track describes the sound instead of
+				     transcribing it — see the note in the .vtt. -->
+				<track kind="captions" src="{base}/lyrebird-boards.vtt" srclang="en" label="English" default />
+				<p>
+					Your browser cannot play this. <a href="{base}/lyrebird-boards.mp4">Download the
+					clip</a> (MP4, 10 MB).
+				</p>
+			</video>
+			<figcaption>
+				A Fire and a CoreS3 on the all-birds slot, <b>with sound</b>. Both are drawing the
+				same picture: a camera inside the corpus, following whoever is singing. The Fire has
+				three real buttons; the CoreS3 has the same three drawn along the bottom as touch
+				zones.
+			</figcaption>
+		</figure>
 	</header>
 
 	{#if !supported}
@@ -667,6 +703,35 @@
 
 	.lede b {
 		color: var(--ink);
+		font-weight: 600;
+	}
+
+	/* The clip of the two boards. Full width of the column and no wider: it is a 16:9
+	   frame of two small screens, and shrinking it further makes the band unreadable. */
+	.demo {
+		max-width: 40rem;
+		margin: 1.2rem 0 0;
+	}
+
+	.demo video {
+		display: block;
+		width: 100%;
+		height: auto;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: #000;
+	}
+
+	.demo figcaption {
+		max-width: 34rem;
+		margin: 0.5rem 0 0;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		color: var(--ink-faint);
+	}
+
+	.demo figcaption b {
+		color: var(--ink-dim);
 		font-weight: 600;
 	}
 
