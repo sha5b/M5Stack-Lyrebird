@@ -7,6 +7,7 @@
 
 #include "audio.h"
 #include "bird_data.h"
+#include "buttons.h"
 #include "chorus.h"
 #include "syrinx.h"
 
@@ -22,15 +23,18 @@ static int SCR_H = 240;
 #define BAND_X 4
 #define BAND_Y 62
 #define BAND_W 312
-#define BAND_H 134
+#define BAND_H 124
 #define PLOT_X (BAND_X + 1)  // inner plot area, inside the frame
 #define PLOT_Y (BAND_Y + 1)
 #define PLOT_W (BAND_W - 2)
 #define PLOT_H (BAND_H - 2)
-#define INFO_Y 200
-#define VOL_Y 212
-#define VOL_H 9
-#define HINT_Y 228
+#define INFO_Y 189
+#define VOL_Y 200
+#define VOL_H 8
+// The bottom strip: the hint line on a board with real buttons, three labelled
+// touch zones on one without. Same region either way.
+#define BAR_Y 211
+#define BAR_H 29
 
 // PLOT_W must stay a whole number of steps, or the playhead overruns the frame
 // on the last column of a sweep.
@@ -79,7 +83,11 @@ static uint16_t hsv565(float h, float s, float v) {
 static uint16_t voiceColor(uint8_t tag, float env, bool allBirds) {
     float hue, val;
     if (allBirds) {
-        hue = (float)(tag / 2) / (float)SPECIES_COUNT;
+        // Hue spans the roster *sample*, not the corpus: with thousands of
+        // species, dividing by SPECIES_COUNT would collapse every bird on screen
+        // into the same few degrees of red.
+        int pairs = chorusRosterSize() / 2;
+        hue = (float)(tag / 2) / (float)(pairs > 0 ? pairs : 1);
         val = (tag & 1) ? 0.78f : 1.0f;
     } else {
         hue = 0.06f + 0.21f * (float)(tag & 3);
@@ -161,11 +169,38 @@ static void drawVolumeBar() {
     if (fill < w - 2) M5.Display.fillRect(7 + fill, VOL_Y + 1, w - 2 - fill, VOL_H - 2, C_BG);
 }
 
-static void drawHints() {
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(C_DIM, C_BG);
-    M5.Display.setCursor(6, HINT_Y);
-    M5.Display.print("A/C bird  B chorus/solo  hold A/C vol  hold B pause");
+// The bottom strip. On the Fire it names what the three physical buttons do; on
+// the CoreS3 it *is* the three buttons, so it is drawn as targets rather than as
+// a caption. The second line of each zone carries the hold action, which is the
+// part that is otherwise undiscoverable on a touch board.
+static void drawBottomStrip() {
+    M5.Display.fillRect(0, BAR_Y, SCR_W, SCR_H - BAR_Y, C_BG);
+
+    if (!buttonsAreTouch()) {
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(C_DIM, C_BG);
+        M5.Display.setCursor(6, BAR_Y + 5);
+        M5.Display.print("A/C bird  B chorus/solo  hold A/C vol  hold B pause");
+        return;
+    }
+
+    static const char* top[3] = {"< BIRD", "MODE", "BIRD >"};
+    static const char* sub[3] = {"hold vol-", "hold pause", "hold vol+"};
+    const int zw = SCR_W / 3;
+    for (int i = 0; i < 3; i++) {
+        int x = i * zw;
+        int w = (i == 2) ? SCR_W - x : zw;
+        M5.Display.drawRect(x + 2, BAR_Y, w - 4, BAR_H, C_RULE);
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(C_TEXT, C_BG);
+        int tw = (int)strlen(top[i]) * 6;
+        M5.Display.setCursor(x + (w - tw) / 2, BAR_Y + 6);
+        M5.Display.print(top[i]);
+        M5.Display.setTextColor(C_DIM, C_BG);
+        int sw = (int)strlen(sub[i]) * 6;
+        M5.Display.setCursor(x + (w - sw) / 2, BAR_Y + 17);
+        M5.Display.print(sub[i]);
+    }
 }
 
 static void drawBandFrame() {
@@ -198,7 +233,7 @@ void uiFullRedraw() {
     drawSub();
     drawBandFrame();
     drawVolumeBar();
-    drawHints();
+    drawBottomStrip();
     s_sweepX = 0;
 }
 
@@ -207,7 +242,7 @@ void uiChrome() {
     drawName();
     drawSub();
     drawVolumeBar();
-    drawHints();
+    drawBottomStrip();
 }
 
 void uiFrame() {

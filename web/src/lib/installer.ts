@@ -1,8 +1,4 @@
-import type { ClassicReset, ESPLoader, Transport } from 'esptool-js';
-
-// What `LoaderOptions.resetConstructors.classicReset` is declared to return. See
-// the note at the call site: the runtime only ever calls `.reset()` on it.
-type ClassicResetLike = ClassicReset;
+import type { ESPLoader, Transport } from 'esptool-js';
 
 /**
  * Drives the whole connect -> flash cycle over Web Serial.
@@ -15,6 +11,28 @@ type ClassicResetLike = ClassicReset;
 // USB-UART bridges. The M5Stack Fire's CP2104 shares the CP2102's VID:PID.
 // Filtering by these keeps the browser's port picker to real devices instead
 // of every ttyS*/COM* and Bluetooth port.
+/**
+ * Espressif's VID, and the one product id that is a ROM bootloader.
+ *
+ * An ESP32-S3 board with native USB is two different USB devices depending on
+ * what it is running. The CoreS3's application presents its own CDC — 0x303a
+ * with an M5Stack product id such as 0x811a — while the ROM's USB-Serial-JTAG
+ * is 0x303a:0x1001. Only the second one can be flashed.
+ *
+ * This is not a detail we can paper over. On a board with a UART bridge the
+ * flasher resets the chip into its bootloader over DTR/RTS and the USB device
+ * stays put. Here the reset *replaces* the USB device, so the handle the browser
+ * granted stops existing mid-connect — which is why the CoreS3 appeared to
+ * restart endlessly and never answer. The board has to be in download mode
+ * before the port is picked, and then it is a different entry in the picker.
+ */
+export const ESPRESSIF_VID = 0x303a;
+const ROM_BOOTLOADER_PID = 0x1001;
+
+export function isEspressifAppPort(ids: { vid: number; pid: number } | null): boolean {
+	return ids !== null && ids.vid === ESPRESSIF_VID && ids.pid !== ROM_BOOTLOADER_PID;
+}
+
 const USB_FILTERS = [
 	{ usbVendorId: 0x10c4, usbProductId: 0xea60 }, // Silicon Labs CP2102/CP2104 (M5Stack Fire)
 	{ usbVendorId: 0x10c4, usbProductId: 0xea70 }, // Silicon Labs CP2105
@@ -25,7 +43,7 @@ const USB_FILTERS = [
 	// Espressif, vendor-wide: the CoreS3 programs over the ESP32-S3's own USB
 	// rather than a bridge chip, so it appears as an Espressif CDC/JTAG device.
 	// esptool-js detects PID 0x1001 and switches to its USB-JTAG reset by itself.
-	{ usbVendorId: 0x303a }
+	{ usbVendorId: ESPRESSIF_VID }
 ];
 
 // Sync always happens at 115200 (esptool-js `romBaudrate`); these are the rates
@@ -34,47 +52,46 @@ const FAST_BAUD = 460800;
 const SLOW_BAUD = 115200;
 
 /**
- * Bounds one whole esptool connect, not one reset.
+ * There is deliberately no timeout around the connect, and that is a fix rather
+ * than an omission.
  *
- * It has to sit above esptool-js's own budget, and that budget is larger than it
- * looks: `ESPLoader.connect()` makes 7 attempts, each a reset sequence followed
- * by 5 sync tries. Below that ceiling we abort the loader mid-sequence and start
- * it again, which resets the board another seven times without ever letting it
- * finish — the board appears to restart forever and the reported error is
- * whatever our timeout says rather than what esptool found.
+ * A timeout here cannot cancel anything. Rejecting the race leaves esptool-js's
+ * own promise running: it keeps working through its seven attempts, and it keeps
+ * the serial port open while it does. The port then stays claimed after we have
+ * reported failure and torn down, so the next attempt — and any other program,
+ * including esptool.py in a terminal — gets "the port is busy or doesn't exist".
+ * That is a worse failure than the hang it was guarding against, and harder to
+ * recognise, because nothing on screen says the previous attempt is still going.
+ *
+ * It is also unnecessary: `ESPLoader.connect()` is already bounded. Seven
+ * attempts, each a reset sequence and five sync reads with a 100 ms timeout
+ * apiece, so it settles in well under a minute and then throws by itself.
  */
-const CONNECT_TIMEOUT_MS = 60000;
 
 /**
- * Reset sequences for `CustomReset`: D = DTR (1 pulls IO0 low), R = RTS (1 pulls
- * EN low), W = wait in ms.
+ * A note on the reset sequence, so nobody re-breaks this.
  *
- * esptool-js's built-in ClassicReset is `D0|R1|W100|D1|R0|W50|D0`, and on an
- * M5Stack Core that is marginal in two places. EN carries a debounce capacitor
- * for the side reset button, so 100 ms is not always long enough for the line to
- * reach a logic low — the chip never really enters reset. And releasing EN in the
- * statement straight after pulling IO0 low leaves no settling time, so the chip
- * can latch IO0 before it has actually gone low and boot the application instead
- * of the ROM loader. Over Web Serial each signal change is a separate async
- * round trip to the browser's serial stack, which widens both windows further.
+ * esptool-js's ClassicReset is `D0|R1|W100|D1|R0|W50|D0`, and an earlier version
+ * of this file replaced it with "improved" sequences that held EN low longer and
+ * inserted a settling wait between pulling IO0 low and releasing EN. Measured on
+ * an M5Stack Fire, the stock sequence entered download mode 3/3 and both
+ * replacements 0/3. They were a straight regression.
  *
- * So: hold EN low longer, then insert an explicit wait between IO0 going low and
- * EN being released. esptool.py papers over the same board with its
- * `ESPTOOL_RESET_DELAY` escape hatch.
+ * The reasoning behind them was wrong about the hardware. This is the classic
+ * two-transistor auto-reset circuit, where EN and IO0 are driven by the
+ * *combination* of DTR and RTS rather than one line each:
  *
- * Two lengths, because esptool alternates the strategies it is given across its
- * seven attempts — a board that needs the slow one still gets it.
+ *     DTR RTS -> EN IO0
+ *      0   1      0   1     reset asserted
+ *      1   1      1   1     reset released, IO0 still high
+ *      1   0      1   0     IO0 low
+ *
+ * So in `D1|R0` it is `D1` that releases EN and `R0` that pulls IO0 low — the
+ * opposite of the assumption. A wait between them gives the chip time to latch
+ * IO0 high and boot the application, which is exactly the failure it was meant
+ * to prevent. Longer waits elsewhere are harmless (250 ms on either side also
+ * measured 4/4), but they buy nothing, so the library's own sequence stands.
  */
-const RESET_SEQUENCE_SHORT = 'D0|R1|W200|D1|W40|R0|W450|D0';
-const RESET_SEQUENCE_LONG = 'D0|R1|W500|D1|W80|R0|W900|D0';
-
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-	let timer: ReturnType<typeof setTimeout>;
-	const expiry = new Promise<never>((_, reject) => {
-		timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
-	});
-	return Promise.race([work, expiry]).finally(() => clearTimeout(timer)) as Promise<T>;
-}
 
 /** One flashable board. The Fire and the CoreS3 are different architectures, so
  * there is an image per board and no single binary that runs on both. */
@@ -137,6 +154,29 @@ export class Installer {
 	}
 
 	/**
+	 * Drop the granted port so the next connect re-opens the picker.
+	 *
+	 * A Web Serial port is a handle to one USB device, and several things here
+	 * invalidate it: an ESP32-S3 leaving its application for its ROM bootloader
+	 * swaps one USB device for another, and a board that browns out or is
+	 * unplugged takes its device with it. In both cases the handle stays non-null
+	 * and every retry fails against something that no longer exists, which reads
+	 * as "the board will not connect" when the truth is "we are talking to a
+	 * ghost". Cheaper to ask for the port again than to explain that.
+	 */
+	forgetPort(): void {
+		this.port = null;
+	}
+
+	/** VID/PID of the chosen port, for the download-mode check below. */
+	portIds(): { vid: number; pid: number } | null {
+		if (!this.port) return null;
+		const info = this.port.getInfo();
+		if (info.usbVendorId === undefined || info.usbProductId === undefined) return null;
+		return { vid: info.usbVendorId, pid: info.usbProductId };
+	}
+
+	/**
 	 * Enter the ROM bootloader and identify the chip.
 	 *
 	 * The board visibly resets several times while this runs — that is the reset
@@ -154,7 +194,7 @@ export class Installer {
 
 		try {
 			onLog(`--- connecting (sync at ${SLOW_BAUD}, then ${FAST_BAUD})`);
-			return await withTimeout(this.attemptConnect(FAST_BAUD, onLog), CONNECT_TIMEOUT_MS, 'Connect');
+			return await this.attemptConnect(FAST_BAUD, onLog);
 		} catch (e) {
 			// `chip` is only set once sync succeeded and the magic value was read.
 			const answered = this.loader?.chip != null;
@@ -168,7 +208,7 @@ export class Installer {
 			}
 
 			onLog(`--- the board answered but ${FAST_BAUD} did not hold; retrying at ${SLOW_BAUD}`);
-			return await withTimeout(this.attemptConnect(SLOW_BAUD, onLog), CONNECT_TIMEOUT_MS, 'Connect');
+			return await this.attemptConnect(SLOW_BAUD, onLog);
 		}
 	}
 
@@ -179,7 +219,7 @@ export class Installer {
 		// Loaded on demand: esptool-js ships extensionless ESM imports that
 		// Node cannot resolve during prerendering, and it is only ever needed
 		// in the browser once the user has actually picked a device.
-		const { ESPLoader, Transport, CustomReset } = await import('esptool-js');
+		const { ESPLoader, Transport } = await import('esptool-js');
 
 		this.transport = new Transport(this.port!, false);
 		this.loader = new ESPLoader({
@@ -192,18 +232,6 @@ export class Installer {
 			// `debug()`. With this on it lands in the log the page already shows,
 			// which is the difference between diagnosing this and guessing at it.
 			debugLogging: true,
-			resetConstructors: {
-				// esptool hands this its own delay (50 ms, then 550 ms) and expects
-				// a ClassicReset back. We substitute the two sequences above, which
-				// is why the cast is here: upstream types the factory by the class
-				// it happens to return rather than by the ResetStrategy interface
-				// it actually uses, and CustomReset implements that interface.
-				classicReset: (transport, resetDelay) =>
-					new CustomReset(
-						transport,
-						resetDelay > 100 ? RESET_SEQUENCE_LONG : RESET_SEQUENCE_SHORT
-					) as unknown as ClassicResetLike
-			},
 			terminal: {
 				clean() {},
 				writeLine: onLog,

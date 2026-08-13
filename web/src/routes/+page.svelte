@@ -5,6 +5,8 @@
 		Installer,
 		isSupported,
 		boardForChip,
+		isEspressifAppPort,
+		ESPRESSIF_VID,
 		type BoardMeta,
 		type DeviceInfo,
 		type FirmwareMeta
@@ -39,6 +41,12 @@
 
 	// Set once the board answers: what it actually is, against what is selected.
 	let detected: BoardMeta | null = null;
+	// True when the picked port is an ESP32-S3 running its application rather
+	// than its ROM bootloader: flashable only after entering download mode.
+	let appPort = false;
+	// VID/PID of the port we last tried, so a failure can be explained in terms of
+	// the board it actually was.
+	let portIds: { vid: number; pid: number } | null = null;
 	$: mismatch = detected !== null && board !== null && detected.id !== board.id;
 	$: canInstall = stage === 'ready' && board !== null && !mismatch;
 
@@ -74,14 +82,28 @@
 	 * platform-specific — so say which one.
 	 */
 	function hintFor(message: string): string {
+		const noBootloader =
+			/Failed to connect|Timed out waiting for packet|invalid head of packet|no sync|Cannot read|Wrong boot mode/i.test(
+				message
+			);
+
+		// An Espressif device is an ESP32-S3 on its own USB, so none of the advice
+		// below applies to it: there is no bridge, no DTR/RTS circuit and no cable
+		// that will fix it. It just was not in download mode.
+		if (noBootloader && portIds?.vid === ESPRESSIF_VID) {
+			return (
+				'The CoreS3 was not in download mode. Hold the reset button on the left ' +
+				'side for 2–3 seconds until the green LED lights, let go, then connect ' +
+				'again and pick "USB JTAG/serial debug unit". This is only needed while ' +
+				'the board still has its factory firmware — once Lyrebird is installed it ' +
+				'keeps the same USB identity across a reset and reflashes normally.'
+			);
+		}
+
 		// Board never entered the ROM loader — auto-reset did not take. The screen
 		// blanking and coming back several times during this is the reset sequence
 		// working as intended, so say so: it reads like a fault and is not one.
-		if (
-			/Failed to connect|Timed out waiting for packet|invalid head of packet|no sync|Cannot read|Wrong boot mode/i.test(
-				message
-			)
-		) {
+		if (noBootloader) {
 			return (
 				'The board reset but started your firmware instead of its bootloader. ' +
 				'(The screen going dark and back a few times during a connect is the reset ' +
@@ -138,6 +160,18 @@
 			}
 		}
 
+		portIds = installer.portIds();
+		appPort = isEspressifAppPort(portIds);
+		if (appPort) {
+			// Do not even try: the reset would drop this USB device and the browser
+			// would lose the handle, which looks exactly like a board rebooting
+			// forever. Say what to do instead.
+			error = 'That port is the board running its own firmware, not its bootloader.';
+			errorHint = '';
+			stage = 'error';
+			return;
+		}
+
 		stage = 'connecting';
 		try {
 			device = await installer.connect(addLog);
@@ -152,6 +186,9 @@
 		} catch (e) {
 			await installer.disconnect();
 			device = null;
+			// The handle may point at a USB device that no longer exists; make the
+			// next attempt pick one again rather than retry against a ghost.
+			installer.forgetPort();
 			fail(e, 'The board did not answer. Unplug it, plug it in again, and retry.');
 		}
 	}
@@ -185,6 +222,7 @@
 		installer = new Installer();
 		device = null;
 		detected = null;
+		appPort = false;
 		error = '';
 		errorHint = '';
 		log = [];
@@ -260,32 +298,6 @@
 			</p>
 		</div>
 	{:else}
-		<section class="step">
-			<h2><span class="num">00</span> Board</h2>
-			<p>
-				The Fire is an ESP32 and the CoreS3 an ESP32-S3 — different processors, so there is
-				an image for each and no one binary that runs on both. Connecting reads the chip off
-				the board and picks for you; this only matters before that, and for the manual route.
-			</p>
-			<div class="actions">
-				{#each meta?.boards ?? [] as b (b.id)}
-					<button class:on={board?.id === b.id} on:click={() => (board = b)}>
-						{b.name}
-					</button>
-				{/each}
-			</div>
-			{#if mismatch && detected}
-				<div class="notice warn">
-					<strong>That is not the board you have.</strong>
-					<p>
-						The chip answered as {detected.chipFamily}, so this is a {detected.name}. Writing
-						the other image would flash without complaint and then never boot, so Install
-						stays disabled until the selection matches.
-					</p>
-				</div>
-			{/if}
-		</section>
-
 		<section class="step" class:muted={stage !== 'idle' && stage !== 'connecting'}>
 			<h2><span class="num">01</span> Connect</h2>
 
@@ -312,16 +324,55 @@
 					</button>
 				</div>
 				<p class="note">
-					The screen goes dark and comes back several times while this runs. That is the reset
-					sequence putting the board into its bootloader, not a fault — it can take half a
-					minute. On the Fire the reset has to happen over the cable, because the Core has no
-					BOOT button; the CoreS3 resets itself over its native USB instead.
+					<b>Fire:</b> just click Connect. The screen goes dark and comes back several times —
+					that is the reset sequence putting the board into its bootloader, not a fault, and it
+					can take half a minute. The Core has no BOOT button, so the reset has to happen over
+					the cable.
+				</p>
+				<p class="note">
+					<b>CoreS3, first time only:</b> put it into download mode before connecting. Hold the
+					reset button on the left side for 2–3 seconds until the green LED lights, then let
+					go. Click Connect and pick <span class="mono">USB JTAG/serial debug unit</span> — a
+					new entry, not the one named after the board.
+				</p>
+				<p class="note">
+					Why only the first time: the factory firmware puts the CoreS3 on the USB bus under
+					its own identity, and resetting into the bootloader swaps it for another — the
+					browser loses the port mid-connect. Lyrebird uses the chip's own USB-Serial-JTAG
+					instead, which survives a reset, so once it is installed the board reflashes from
+					here like any other.
 				</p>
 			{/if}
 		</section>
 
+		<section class="step">
+			<h2><span class="num">02</span> Board</h2>
+			<p>
+				The Fire is an ESP32 and the CoreS3 an ESP32-S3 — different processors, so there is
+				an image for each and no one binary that runs on both. Connecting above read the chip
+				off the board and picked for you. Change it only if you know better than the chip did.
+			</p>
+			<div class="actions">
+				{#each meta?.boards ?? [] as b (b.id)}
+					<button class:on={board?.id === b.id} on:click={() => (board = b)}>
+						{b.name}
+					</button>
+				{/each}
+			</div>
+			{#if mismatch && detected}
+				<div class="notice warn">
+					<strong>That is not the board you have.</strong>
+					<p>
+						The chip answered as {detected.chipFamily}, so this is a {detected.name}. Writing
+						the other image would flash without complaint and then never boot, so Install
+						stays disabled until the selection matches.
+					</p>
+				</div>
+			{/if}
+		</section>
+
 		<section class="step" class:muted={!device}>
-			<h2><span class="num">02</span> Install</h2>
+			<h2><span class="num">03</span> Install</h2>
 
 			{#if stage === 'flashing'}
 				<div class="bar"><span style="width: {Math.round(progress * 100)}%"></span></div>
@@ -347,7 +398,26 @@
 				</p>
 			{/if}
 
-			{#if error}
+			{#if error && appPort}
+				<div class="notice warn">
+					<strong>That port is the board, not its bootloader.</strong>
+					<p>
+						An ESP32-S3 with native USB is two different USB devices: the firmware it is
+						running presents one, and the ROM bootloader presents another. Only the second
+						can be flashed, and resetting into it <i>replaces</i> the USB device — so the
+						port the browser just granted would stop existing halfway through, which is
+						what makes the board look like it is restarting forever.
+					</p>
+					<p>
+						Hold the reset button on the left side for 2–3 seconds until the green LED
+						lights, release, then Connect again and choose
+						<span class="mono">USB JTAG/serial debug unit</span>.
+					</p>
+					<div class="actions">
+						<button class="primary" on:click={() => connect(true)}>Pick the port again</button>
+					</div>
+				</div>
+			{:else if error}
 				<div class="notice warn">
 					<strong>The install did not finish.</strong>
 					<p class="mono errline">{error}</p>
@@ -359,7 +429,7 @@
 						</details>
 					{/if}
 					<div class="actions">
-						<button class="primary" on:click={() => connect()}>Try again</button>
+						<button class="primary" on:click={() => connect()}>Pick the port and retry</button>
 						<button on:click={startOver}>Start over</button>
 					</div>
 				</div>
@@ -368,7 +438,7 @@
 	{/if}
 
 	<section class="step" id="manual">
-		<h2><span class="num">03</span> Without Web Serial</h2>
+		<h2><span class="num">04</span> Without Web Serial</h2>
 		<p>
 			Safari, mobile, or any browser where the picker stays empty. The same image, written by
 			<a href="https://docs.espressif.com/projects/esptool/en/latest/esp32/">esptool</a>
@@ -398,7 +468,7 @@
 	</section>
 
 	<section class="step">
-		<h2><span class="num">04</span> Controls</h2>
+		<h2><span class="num">05</span> Controls</h2>
 		<p>
 			Three buttons under the screen. A and C step one dial of thirteen positions; B changes
 			how the current position sings. A hold does something else than a press.

@@ -11,8 +11,27 @@
 
 #define BIRDS_PER_SPECIES 4       // roster size on a single-species slot
 #define BIRDS_PER_SPECIES_ALL 2   // ...and per species on the all-birds slot
-#define ROSTER_MAX (SPECIES_COUNT * BIRDS_PER_SPECIES_ALL > BIRDS_PER_SPECIES \
-                    ? SPECIES_COUNT * BIRDS_PER_SPECIES_ALL : BIRDS_PER_SPECIES)
+
+/**
+ * The all-birds roster is a *sample*, not the whole corpus.
+ *
+ * It used to be two individuals of every species, which was fine at twelve and
+ * absurd at 2423: 4846 Individuals is 132 KiB of DRAM, which overflowed the
+ * ESP32's data segment outright, and it bought nothing — there are eight voices
+ * and six song players, so all but a handful of those birds could never sing.
+ *
+ * So: ALL_BIRDS_SPECIES species drawn at random, two individuals each so the
+ * duet answer still has a conspecific to answer. The sample rolls over slowly
+ * while the slot plays (see scheduleSong), which is what makes "all birds" a
+ * tour of the corpus rather than a fixed dozen.
+ */
+#define ALL_BIRDS_SPECIES 12
+#define ALL_BIRDS_ROSTER (ALL_BIRDS_SPECIES * BIRDS_PER_SPECIES_ALL)
+#define ROSTER_MAX (ALL_BIRDS_ROSTER > BIRDS_PER_SPECIES ? ALL_BIRDS_ROSTER : BIRDS_PER_SPECIES)
+
+// Chance per chorus event that one species in the sample is swapped out. At ~34
+// songs a minute this turns the roster over about every four minutes.
+#define ROSTER_ROLL_CHANCE 0.12f
 #define SONG_PLAYERS 6            // concurrent songs in flight (duet answers overlap)
 #define SONGS_PER_MINUTE 12.0f    // one species
 #define SONGS_PER_MINUTE_ALL 34.0f// all twelve: a dawn chorus, not a solo with echoes
@@ -21,7 +40,7 @@
 #define GOLDEN 0.6180339887498949f
 
 struct Individual {
-    uint8_t species;
+    uint16_t species;   // index into SPECIES[]; the corpus is far past 255
     uint8_t tag;        // roster index; the display colours voices by it
     float pitchCents;
     float durScale;
@@ -83,7 +102,7 @@ static float mulberry32(uint32_t& a) {
 // Individual `index` of `speciesIdx`, deterministic across boots.
 static void makeIndividual(Individual& b, int speciesIdx, int index, int tag) {
     uint32_t state = fnv1a(speciesIdx, index);
-    b.species = (uint8_t)speciesIdx;
+    b.species = (uint16_t)speciesIdx;
     b.tag = (uint8_t)tag;
     b.pitchCents = spread(index, 0.0f) * 90.0f;          // about a semitone of range
     b.vibScale = 1.0f + spread(index, 0.37f) * 0.18f;
@@ -96,9 +115,11 @@ static void makeIndividual(Individual& b, int speciesIdx, int index, int tag) {
 static void reseedRoster() {
     s_rosterN = 0;
     if (s_slot == 0) {
-        // every species, two individuals each — tags stay adjacent per species
-        // so the display gives one species one region of the palette
-        for (int sp = 0; sp < SPECIES_COUNT; sp++) {
+        // a random sample of species, two individuals each — tags stay adjacent
+        // per species so the display gives one species one region of the palette
+        int n = SPECIES_COUNT < ALL_BIRDS_SPECIES ? SPECIES_COUNT : ALL_BIRDS_SPECIES;
+        for (int k = 0; k < n; k++) {
+            int sp = (int)(frand() * SPECIES_COUNT) % SPECIES_COUNT;
             for (int i = 0; i < BIRDS_PER_SPECIES_ALL; i++) {
                 makeIndividual(s_roster[s_rosterN], sp, i, s_rosterN);
                 s_rosterN++;
@@ -130,7 +151,7 @@ static void startSong(uint8_t songIdx, const Individual& bird, float gain, uint3
 // bird in the roster (which is the case for nobody at present, but the roster
 // shape is a tunable).
 static int conspecific(int rosterIdx) {
-    uint8_t sp = s_roster[rosterIdx].species;
+    uint16_t sp = s_roster[rosterIdx].species;
     int candidates[ROSTER_MAX];
     int n = 0;
     for (int i = 0; i < s_rosterN; i++) {
@@ -140,11 +161,29 @@ static int conspecific(int rosterIdx) {
     return candidates[(int)(frand() * n) % n];
 }
 
+// Replace one species in the all-birds sample, keeping its two roster slots
+// together so the duet logic and the display palette still line up.
+static void rollRoster() {
+    if (s_slot != 0 || s_rosterN < BIRDS_PER_SPECIES_ALL) return;
+    int pair = (int)(frand() * (s_rosterN / BIRDS_PER_SPECIES_ALL));
+    int base = pair * BIRDS_PER_SPECIES_ALL;
+    // do not evict a bird that is mid-song: its player holds a copy, but the
+    // display colours by tag and the swap would recolour it mid-phrase
+    for (auto& p : s_players) {
+        if (p.active && p.bird.tag >= base && p.bird.tag < base + BIRDS_PER_SPECIES_ALL) return;
+    }
+    int sp = (int)(frand() * SPECIES_COUNT) % SPECIES_COUNT;
+    for (int i = 0; i < BIRDS_PER_SPECIES_ALL; i++) {
+        makeIndividual(s_roster[base + i], sp, i, base + i);
+    }
+}
+
 // One chorus event: a bird sings a random song; 25 % a rival of the same
 // species answers. Cross-species "answers" would not be a duet, so answers
 // stay conspecific even on the all-birds slot.
 static void scheduleSong(uint32_t atMs) {
     if (!s_rosterN) return;
+    if (s_slot == 0 && frand() < ROSTER_ROLL_CHANCE) rollRoster();
     // clamp: after a UI stall atMs can sit in the past, and an unsigned
     // atMs - millis() would wrap to weeks — sing immediately instead
     uint32_t now = millis();

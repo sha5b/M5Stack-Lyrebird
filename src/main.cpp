@@ -1,4 +1,4 @@
-// Lyrebird on the M5Stack Fire — bird-chorus synth, no SD card.
+// Lyrebird on the M5Stack Fire and CoreS3 — bird-chorus synth, no SD card.
 //
 // Boots into ALL BIRDS: every one of the 12 species at once, two individuals
 // each, synthesized on-device by the Mindlin-Laje syrinx model (port of the
@@ -9,11 +9,16 @@
 //   A short = previous bird     A hold = volume down
 //   B short = chorus <-> solo   B hold = pause/resume
 //   C short = next bird         C hold = volume up
+//
+// On the Fire those are the three physical buttons. The CoreS3 has none, so the
+// same three are touch zones drawn along the bottom of the screen — see
+// src/buttons.cpp, which makes both look identical from here.
 #include <Arduino.h>
 #include <M5Unified.h>
 
 #include "audio.h"
 #include "bird_data.h"
+#include "buttons.h"
 #include "chorus.h"
 #include "syrinx.h"
 #include "ui.h"
@@ -66,6 +71,7 @@ void setup() {
     M5.Display.setRotation(1);
     M5.Display.setBrightness(BACKLIGHT);
 
+    buttonsBegin();
     uiInit();
     audioInit();
     chorusInit();
@@ -76,13 +82,14 @@ void setup() {
 
 void loop() {
     M5.update();
+    buttonsUpdate();
     chorusTick();
 
     bool chromeDirty = false;
     bool fullDirty = false;
 
     // Button A: hold = volume down, short release = previous bird
-    if (M5.BtnA.pressedFor(VOL_HOLD_MS)) {
+    if (btnPressedFor(BTN_A, VOL_HOLD_MS)) {
         volHoldA = true;
         uint32_t nowMs = millis();
         if (nowMs - lastVolStepMs >= VOL_STEP_MS) {
@@ -91,7 +98,7 @@ void loop() {
             chromeDirty = true;
         }
     }
-    if (M5.BtnA.wasReleased()) {
+    if (btnWasReleased(BTN_A)) {
         if (!volHoldA) {
             chorusSetSlot(chorusSlot() - 1);
             fullDirty = true;
@@ -101,14 +108,14 @@ void loop() {
 
     // Button B: short = chorus <-> solo, hold = pause/resume. On the all-birds
     // slot a short press does nothing: that slot is a chorus by definition.
-    if (M5.BtnB.pressedFor(PAUSE_HOLD_MS) && !bHoldHandled) {
+    if (btnPressedFor(BTN_B, PAUSE_HOLD_MS) && !bHoldHandled) {
         bHoldHandled = true;
         bool on = !chorusEnabled();
         chorusSetEnabled(on);
         audioSetRunning(on);
         chromeDirty = true;
     }
-    if (M5.BtnB.wasReleased()) {
+    if (btnWasReleased(BTN_B)) {
         if (!bHoldHandled && chorusEnabled() && !chorusAllBirds()) {
             chorusSetMode(chorusMode() == MODE_CHORUS ? MODE_SOLO : MODE_CHORUS);
             chromeDirty = true;
@@ -117,7 +124,7 @@ void loop() {
     }
 
     // Button C: hold = volume up, short release = next bird
-    if (M5.BtnC.pressedFor(VOL_HOLD_MS)) {
+    if (btnPressedFor(BTN_C, VOL_HOLD_MS)) {
         volHoldC = true;
         uint32_t nowMs = millis();
         if (nowMs - lastVolStepMs >= VOL_STEP_MS) {
@@ -126,7 +133,7 @@ void loop() {
             chromeDirty = true;
         }
     }
-    if (M5.BtnC.wasReleased()) {
+    if (btnWasReleased(BTN_C)) {
         if (!volHoldC) {
             chorusSetSlot(chorusSlot() + 1);
             fullDirty = true;

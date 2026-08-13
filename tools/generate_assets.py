@@ -12,6 +12,7 @@ string lookups. Re-run only when the vendored assets change:
 
   python3 tools/generate_assets.py
 """
+import argparse
 import json
 import os
 
@@ -169,8 +170,19 @@ def gen_calibration(cal):
 
 
 def main():
-    with open(os.path.join(ROOT, "assets", "inventory.json")) as f:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--inventory", default=os.path.join(ROOT, "assets", "inventory.json"),
+                    help="inventory JSON; the authored 12 by default. The parent "
+                         "project's learned-inventory-final.json has the same schema "
+                         "and 2423 species.")
+    ap.add_argument("--max-species", type=int, default=0,
+                    help="keep only the first N species (0 = all)")
+    args = ap.parse_args()
+
+    with open(args.inventory) as f:
         inv = json.load(f)
+    if args.max_species:
+        inv["species"] = inv["species"][: args.max_species]
     with open(os.path.join(ROOT, "assets", "syrinx-calibration.json")) as f:
         cal = json.load(f)
 

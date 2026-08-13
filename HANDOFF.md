@@ -159,20 +159,12 @@ Reported symptom: the board blanks and restarts over and over, then
 "Failed to connect with the device". Four causes in `web/src/lib/installer.ts`,
 all fixed, **none verified on hardware** — nobody has flashed this board yet.
 
-1. **esptool-js's reset sequence has no strapping margin.** Its `ClassicReset` is
-   `D0|R1|W100|D1|R0|W50|D0`, and driving a fake transport shows IO0 going low and
-   EN going high *in the same millisecond*: the ESP32 latches GPIO0 while it is
-   still transitioning, so it boots the application instead of the ROM loader. The
-   M5Stack Core makes it worse — EN carries a debounce cap for the side reset
-   button, so 100 ms may not pull it to a logic low at all, and over Web Serial each
-   signal change is a separate async round trip. Replaced with two `CustomReset`
-   sequences (`RESET_SEQUENCE_SHORT` / `_LONG`) that hold EN low 200/500 ms and wait
-   40/80 ms between IO0 low and EN release. Injected through
-   `LoaderOptions.resetConstructors.classicReset`, which esptool alternates across
-   its seven attempts.
-2. **Our timeout was below esptool's own retry budget.** `connect()` makes 7 attempts
-   of (reset + 5 syncs); the old 20 s bound cut it off part-way, and we then started
-   the whole thing again — seven more resets, never finishing. Now 60 s.
+1. ~~**esptool-js's reset sequence has no strapping margin.**~~ **Wrong, and it was
+   a regression — see "The reset sequence" below.** The custom sequences this
+   session installed were removed after measuring them on hardware.
+2. **Our timeout was below esptool's own retry budget**, and then the timeout
+   itself turned out to be the worse bug — see "The connect timeout" below. There
+   is now no timeout around connect at all.
 3. **We ran the whole connect twice, once per baud rate.** Sync always happens at
    `romBaudrate` (115200) whatever `baudrate` says, so the second run could not
    help and only doubled the resets. Now one connect; the 115200 fallback fires only
@@ -253,6 +245,130 @@ Audio is an ES8388 at I2C 0x10 and ships two pin configurations, one for Basic/C
 and one for CoreS3. If modules are added, the honest choice is a build per
 board+module rather than a config sector: the pins are compile-time in M5Unified
 anyway, and the website already asks which board you have.
+
+## The CoreS3 cannot be flashed from a running board — read this first
+
+Diagnosed on real hardware (the board was plugged in), not reasoned about.
+
+The CoreS3 has no UART bridge. It is **two different USB devices** depending on
+what it is running:
+
+| State | USB id | What it is |
+|---|---|---|
+| running its firmware | `303a:811a` "M5Stack Core S3" | the application's USB CDC |
+| download mode | `303a:1001` "USB JTAG/serial debug unit" | the ROM bootloader |
+
+Only the second can be flashed. On a board with a bridge (the Fire) the flasher
+pulses DTR/RTS, the chip resets into its ROM, and the USB device is untouched
+because the bridge is a separate chip. Here the reset **replaces the USB device**:
+the handle the browser was granted stops existing halfway through the connect.
+That is precisely the "restarts constantly and never answers" report.
+
+Measured: with the app running, `esptool.py --before default_reset` sat at
+"Connecting..." and ended in `Write timeout`, and the USB id stayed `303a:811a`
+for the whole attempt — the board never entered download mode at all. After a
+2-3 s hold of the side reset button (green LED on, then release) the id changed
+to `303a:1001`, `chip_id` answered immediately with `--before no_reset`, and
+`write_flash 0x0 lyrebird-cores3.bin` completed with "Hash of data verified".
+**So the CoreS3 image is known good; it is only the reset path that fails.**
+
+**And it fails only once.** Our build sets `ARDUINO_USB_MODE=1` from the board
+definition, so Lyrebird uses the chip's hardware USB-Serial-JTAG rather than
+TinyUSB. That peripheral keeps its USB identity across a reset — verified by
+reflashing the board a second time with plain `--before default_reset`, which
+succeeded and left the id at `303a:1001` throughout. So the download-mode hold is
+a one-time step to get off the factory firmware, not a permanent workflow. The
+page says so.
+
+Consequences that are now in the code:
+- `isEspressifAppPort()` in web/src/lib/installer.ts refuses to connect to
+  `0x303a` with a product id other than `0x1001`, and says what to do, rather
+  than letting the user watch the board reboot.
+- The Connect step carries separate Fire and CoreS3 instructions, and says the
+  hold is first-time-only.
+- Do not "fix" this with a longer reset sequence. It is not a timing problem.
+
+Two other hardware facts worth recording:
+- **The Fire on this desk is a v2.7**: it enumerates as `1a86:55d4` (WCH CH9102),
+  not the CP2104 the first session assumed. Both ids are in the filter list, so
+  nothing broke, but the comment naming CP2104 as *the* Fire bridge is only true
+  of older units.
+- Our CoreS3 build sets `ARDUINO_USB_MODE=1` (from the board definition), so once
+  our firmware runs it uses the hardware USB-Serial-JTAG and *also* appears as
+  `303a:1001`. The factory app used TinyUSB and `303a:811a`. Product id alone
+  therefore cannot tell "our firmware running" from "ROM bootloader" — only from
+  the factory firmware.
+
+## The reset sequence — do not "improve" it again
+
+Measured on the Fire (CH9102, `1a86:55d4`), boot banner read back over the same
+UART, `waiting for download` versus `SPI_FAST_FLASH_BOOT`:
+
+| sequence | download mode |
+|---|---|
+| `D0\|R1\|W100\|D1\|R0\|W50\|D0` — esptool-js stock | 4/4 |
+| `D0\|R1\|W250\|D1\|R0\|W50\|D0` — longer EN low | 4/4 |
+| `D0\|R1\|W100\|D1\|R0\|W250\|D0` — longer IO0 hold | 4/4 |
+| `D0\|R1\|W200\|D1\|W40\|R0\|W450\|D0` — "ours SHORT" | **0/3** |
+| `D0\|R1\|W500\|D1\|W80\|R0\|W900\|D0` — "ours LONG" | **0/3** |
+
+The two that fail are the two this project shipped for a while. The single
+difference that matters is the wait between `D1` and `R0`; every other timing
+change is harmless.
+
+The reasoning that produced them was wrong about the circuit. This is the classic
+two-transistor auto-reset, where EN and IO0 come from the *combination* of the
+two lines, not one line each:
+
+```
+DTR RTS -> EN IO0
+ 0   1      0   1    reset asserted
+ 1   1      1   1    reset released, IO0 still high
+ 1   0      1   0    IO0 low
+```
+
+So `D1` is what releases EN and `R0` is what pulls IO0 low. A "settling wait"
+between them does the opposite of what it sounds like: it hands the chip 40 ms of
+EN-high with IO0 still high, which is exactly long enough to latch the strapping
+pin and boot the application. The library's own sequence was right.
+
+## The connect timeout — removed, also a regression
+
+`withTimeout` around `ESPLoader.connect()` could not cancel anything. Losing the
+race left esptool-js's promise running: it kept working through its seven
+attempts and kept the serial port open while it did. The port stayed claimed
+after we had reported failure and torn down, so the next attempt — and any other
+program, including esptool.py in a terminal — got
+`Could not open /dev/ttyACM0, the port is busy or doesn't exist`. Observed
+exactly that during this session.
+
+It was unnecessary as well: `connect()` is already bounded at seven attempts of
+(reset + five 100 ms sync reads), so it settles by itself.
+
+Related: a failed connect now calls `Installer.forgetPort()`. A Web Serial port
+is a handle to one USB device, and both a browned-out board and an ESP32-S3
+leaving its application for its ROM invalidate it while leaving the handle
+non-null — every retry then fails against something that no longer exists.
+
+## Buttons on a board that has none
+
+The CoreS3 is a touch panel with no A/B/C. `src/buttons.cpp` puts three logical
+buttons in front of both boards: physical `M5.BtnA/B/C` where they exist, and
+three drawn zones along the bottom of the screen where they do not, fed into
+`m5::Button_Class::setRawState()` so the debounce and hold thresholds behave
+identically. `src/main.cpp` has no board case in it as a result — the short-press
+versus hold distinction that separates "next bird" from "volume up" is the same
+code on both.
+
+M5Unified does map a strip below the CoreS3 screen onto BtnA/B/C, and the first
+version of this leaned on that. Two reasons it is not enough: it depends on the
+touch digitizer reporting coordinates past the bottom of the display, which was
+never verified here, and an unlabelled control surface is a poor one regardless.
+The zones are drawn with their hold action on a second line, since a hold is
+otherwise undiscoverable.
+
+The touch target is deliberately larger than the drawing: `TOUCH_HIT_Y` (200)
+sits above the 29 px visible strip, so the area that responds is about 40 px tall.
 
 ## Regenerating data
 

@@ -30,6 +30,9 @@ A and C step one dial of `SPECIES_COUNT + 1` positions, and it wraps:
 | 1 | **all birds** — all 12 species, 2 individuals each, ~34 songs/min. Boots here. |
 | 2 – 13 | one species, roster of 4 individuals |
 
+On the CoreS3 there are no physical buttons — the same three are touch zones
+drawn along the bottom of the screen, labelled with both actions.
+
 B toggles **chorus** (the roster answering each other, ~12 songs/min) against **solo**
 (one bird, that species' songs back to back). Position 1 is a chorus by definition, so B
 does nothing there.
@@ -38,9 +41,18 @@ does nothing there.
 
 ### From the browser
 
-Serve the flasher (`cd web && npm install && npm run dev`) or use the deployed page,
-then connect the Fire over a data USB cable and click through. Chrome/Edge/Opera only —
-Web Serial.
+Serve the flasher (`cd web && npm install && npm run dev`) or use the deployed page.
+Chrome/Edge/Opera only — Web Serial.
+
+- **Fire**: connect the cable and click through. The board resets itself into its
+  bootloader over the cable; the screen blanking a few times is that, not a fault.
+- **CoreS3**: put it into download mode *first* — hold the side reset button for
+  2–3 s until the green LED lights, then release — and pick the
+  `USB JTAG/serial debug unit` entry. It has no UART bridge, so resetting it into
+  the ROM swaps one USB device for another and the browser loses the port it was
+  given. This is needed **only the first time**: Lyrebird uses the chip's own
+  USB-Serial-JTAG, whose identity survives a reset, so afterwards it reflashes
+  from the browser like any other board.
 
 ### From the command line
 

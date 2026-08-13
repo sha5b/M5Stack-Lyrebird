@@ -129,7 +129,11 @@ void audioInit() {
     cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN);
     cfg.sample_rate = AUDIO_SAMPLE_RATE;
     cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
-    cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+    // ONLY_RIGHT, not ONLY_LEFT. In built-in DAC mode the I2S *right* channel is
+    // the one wired to DAC1 / GPIO25, which is the Fire's speaker; left is DAC2 /
+    // GPIO26, which is not connected on this board. M5Unified uses ONLY_RIGHT for
+    // its mono DAC path for the same reason.
+    cfg.channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT;
     cfg.communication_format = I2S_COMM_FORMAT_STAND_MSB;
     cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count = DMA_BUF_COUNT;
@@ -155,14 +159,22 @@ void audioInit() {
 
 void audioSetRunning(bool on) {
     if (on == s_running) return;
-    // GPIO25 is either an analog DAC output or a digital GPIO, never both. The
-    // first version of this called pinMode(OUTPUT) and dac_output_enable() on the
-    // same pin, which points the GPIO matrix and the RTC analog path at one pad
-    // and leaves which one wins to the order of the calls. i2s_set_dac_mode()
-    // configures the pad on its own; nothing else should touch it.
+    // Two traps here, both paid for.
+    //
+    // The enum reads backwards: I2S_DAC_CHANNEL_RIGHT_EN is DAC *channel 1* on
+    // GPIO25, and LEFT_EN is channel 2 on GPIO26. This code asked for LEFT_EN —
+    // the pin that is not connected on a Fire — and only made a sound because it
+    // also called dac_output_enable(DAC_CHANNEL_1) by hand. Removing that call as
+    // redundant silenced the board outright.
+    //
+    // And GPIO25 is either an analog DAC output or a digital GPIO, never both.
+    // The original also called pinMode(OUTPUT) on it, pointing the GPIO matrix
+    // and the RTC analog path at one pad and leaving the winner to call order.
+    // i2s_set_dac_mode() configures the pad correctly on its own, so with the
+    // right channel selected nothing else needs to touch it.
     if (on) {
         waitAudioIdle();
-        i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN);  // DAC1 = GPIO25
+        i2s_set_dac_mode(I2S_DAC_CHANNEL_RIGHT_EN);  // = DAC1 = GPIO25
         s_shapeErr = 0.0f;
         primeMidLevel();  // settle at mid-level before the first real sample
         s_running = true;
